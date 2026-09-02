@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" id="metaTheme">
+<title>Расписание 307</title>
+<meta name="description" content="Расписание занятий групп А и Б: выберите группу и неделю — сайт покажет, какие пары идут на этой неделе.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<script>
+try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=__s.theme||(__d?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}
+</script>
+</head>
+<body>
+<header class="hdr">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Расписание 307</h1>
+      <p class="sub" id="todayBadge" hidden></p>
+    </div>
+    <div class="hdr-actions">
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Переключить тему">
+        <svg class="ic-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3L17 7M7 17l-1.7 1.7"/></svg>
+        <svg class="ic-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <span class="lab" id="groupLab">Группа</span>
+      <div class="seg groupseg" id="groupSeg" role="group" aria-label="Учебная группа">
+        <button type="button" data-group="А" aria-pressed="true" aria-label="Группа А">А</button>
+        <button type="button" data-group="Б" aria-pressed="false" aria-label="Группа Б">Б</button>
+      </div>
+    </div>
+
+    <div class="weekrow">
+      <button class="wk-step" id="weekPrev" type="button" aria-label="Предыдущая неделя">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="seg weekseg" id="weekSeg" role="group" aria-label="Неделя семестра"></div>
+      <button class="wk-step" id="weekNext" type="button" aria-label="Следующая неделя">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <nav class="daytabs" id="dayTabs" role="tablist" aria-label="День недели"></nav>
+  </div>
+
+  <button class="backtoday" id="backToday" type="button" hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
+    <span>Вернуться к сегодня</span>
+  </button>
+</header>
+<main id="main">
+  <p class="empty" id="emptyMsg" hidden>В этот день занятий нет</p>
+  <div id="content"></div>
+</main>
+
+<footer class="ftr">
+  <p class="legend"><b>Смежная</b> — пара проводится совместно с другой группой</p>
+  <p class="legend">«Окно» — свободный промежуток между занятиями в течение дня</p>
+  <p class="ftr-row">
+    <button class="linkbtn" id="resetBanner" type="button">Показывать подсказку «На главный экран»</button>
+  </p>
+</footer>
+
+<div class="banner" id="banner" hidden role="dialog" aria-label="Подсказка: добавить на главный экран">
+  <div class="banner-body">
+    <p class="banner-title" id="bannerTitle">Добавить на главный экран</p>
+    <p class="banner-text" id="bannerText"></p>
+    <button class="banner-no" id="bannerNo" type="button">Больше не показывать</button>
+  </div>
+  <button class="banner-x" id="bannerClose" type="button" aria-label="Скрыть подсказку">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
