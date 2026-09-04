@@ -20,6 +20,7 @@ function fetchSchedule() {
   const fm = FileManager.local();
   const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
   try {
+    console.log("Сеть: запрашиваю " + DATA_URL);
     const req = new Request(DATA_URL, { timeoutInterval: 10 });
     const txt = req.loadString();
     let data = null, raw = null;
@@ -31,13 +32,23 @@ function fetchSchedule() {
     if (raw) data = JSON.parse(raw);
     if (data) {
       fm.writeString(path, raw);
+      console.log("Сеть: данные получены, кэш записан");
       return data;
     }
     fetchError = "ответ без расписания";
-  } catch (e) { fetchError = String(e).slice(0, 80); }
-  if (fm.fileExists(path)) {
-    try { return JSON.parse(fm.readString(path)); } catch (e) { return null; }
+    console.error("Сеть: ответ получен, но без SCHEDULE_DATA");
+  } catch (e) {
+    fetchError = String(e).slice(0, 80);
+    console.error("Сеть: ошибка — " + fetchError);
   }
+  if (fm.fileExists(path)) {
+    try {
+      const cached = JSON.parse(fm.readString(path));
+      console.log("Кэш: читаю сохранённую копию");
+      return cached;
+    } catch (e) { return null; }
+  }
+  console.error("Кэш: пуст — данных нет");
   return null;
 }
 
@@ -272,10 +283,12 @@ if (group === "B") group = "Б";
 
 const data = fetchSchedule();
 if (!data || !data.times || !data.groups) {
+  console.error("Итог: нет данных — " + (fetchError || "нет сети и кэша"));
   const err = new ListWidget();
   err.addText("Расписание 307");
   err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
   err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
+  if (!config.runsInWidget) await err.presentSmall();
   Script.setWidget(err);
   Script.complete();
 } else {
