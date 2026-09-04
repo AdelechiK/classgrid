@@ -15,14 +15,16 @@ const MONTHS = ["января", "февраля", "марта", "апреля", 
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
 /* ---------- загрузка данных ---------- */
+/* По докам Scriptable: Request.loadString/loadJSON/load — Promise-based, await обязателен. */
 let fetchError = "";   // причина последнего сбоя — показываем в заглушке
-function fetchSchedule() {
+async function fetchSchedule() {
   const fm = FileManager.local();
   const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
   try {
     console.log("Сеть: запрашиваю " + DATA_URL);
     const req = new Request(DATA_URL, { timeoutInterval: 10 });
-    const txt = req.loadString();
+    const txt = await req.loadString();
+    if (typeof txt !== "string") throw new Error("пустой ответ");
     let data = null, raw = null;
     for (const line of txt.split("\n")) {
       if (line.indexOf("window.SCHEDULE_DATA") < 0) continue;
@@ -281,7 +283,7 @@ if (group !== "А" && group !== "Б" && group !== "A" && group !== "B") group = 
 if (group === "A") group = "А";
 if (group === "B") group = "Б";
 
-const data = fetchSchedule();
+const data = await fetchSchedule();
 if (!data || !data.times || !data.groups) {
   console.error("Итог: нет данных — " + (fetchError || "нет сети и кэша"));
   const err = new ListWidget();
