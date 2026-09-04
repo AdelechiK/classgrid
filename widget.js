@@ -174,9 +174,12 @@ function nextLesson(data, timesMin, group, afterDate) {
 function hhmm(min) { return pad2(Math.floor(min / 60)) + ":" + pad2(min % 60); }
 
 /* Минуты в компактный вид для кольца: «45 мин», «1 ч 20». */
-function minTxt(min) {
-  if (min < 60) return min + " мин";
-  return Math.floor(min / 60) + " ч" + (min % 60 ? " " + pad2(min % 60) : "");
+/* Дата-граница состояния: конец текущей пары или начало следующей.
+   На неё ставим refreshAfterDate, её же показывает живой WidgetDate. */
+function boundaryDate(st) {
+  const b = st.kind === "now" ? st.lesson.end : st.lesson.start;
+  const n = st.now || new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, b);
 }
 
 /* ---------- состояние «сейчас / скоро / свободно» ---------- */
@@ -235,16 +238,16 @@ function nextAfter(data, timesMin, group, st) {
 
 /* ---------- кольцо-таймер (DrawContext + Path) ---------- */
 /* Дуга — кубические Безье (у Path нет arc), концы закруглены эллипсами.
-   Рисуем в 3x и уменьшаем через imageSize — чётко на Retina.
+   Рисуем в 3x: фон ячейки 48pt с канвой 144px — чётко на Retina.
+   Центр оставляем пустым: там живой WidgetDate, тикающий между запусками.
    Внутри канвы dynamic-цвета запрещены — выбираем по оформлению устройства. */
-function ringImage(frac, centerText, pt) {
+function ringImage(frac, pt) {
   const S = pt * 3;
   const lw = Math.max(8, Math.round(S * 0.085));
   const r = (S - lw) / 2;
   const dark = Device.isUsingDarkAppearance();
   const trackC = new Color(dark ? "#38383a" : "#e5e5ea");
   const accC = new Color(dark ? "#0a84ff" : "#007aff");
-  const txtC = new Color(dark ? "#98989f" : "#6e6e73");
   const dc = new DrawContext();
   dc.size = new Size(S, S);
   dc.opaque = false;
@@ -278,12 +281,6 @@ function ringImage(frac, centerText, pt) {
     }
   }
 
-  if (centerText) {
-    dc.setFont(Font.semiboldSystemFont(Math.round(S * 0.21)));
-    dc.setTextColor(txtC);
-    dc.setTextAlignedCenter();
-    dc.drawTextInRect(centerText, new Rect(0, S / 2 - S * 0.15, S, S * 0.3));
-  }
   return dc.getImage();
 }
 
@@ -376,11 +373,34 @@ async function createWidget(data, timesMin, group) {
     meta.minimumScaleFactor = 0.85;
 
     body.addSpacer();
-    const ring = body.addImage(ringImage(
-      st.frac,
-      st.kind === "now" ? minTxt(st.leftMin) : minTxt(st.waitMin), 40));
-    ring.imageSize = new Size(40, 40);
+    /* Кольцо — фон ячейки, а внутри живой WidgetDate: система сама тикает
+       отсчётом между запусками скрипта, снимок виджета сам не обновится. */
+    const cell = body.addStack();
+    cell.layoutVertically();
+    cell.size = new Size(48, 48);
+    cell.backgroundImage = ringImage(st.frac, 48);
+    cell.addSpacer();
+    const mid = cell.addStack();
+    mid.layoutHorizontally();
+    mid.addSpacer();
+    const live = mid.addDate(boundaryDate(st));
+    live.applyTimerStyle();
+    live.font = Font.semiboldSystemFont(10);
+    live.textColor = C_TEXT;
+    live.minimumScaleFactor = 0.75;
+    mid.addSpacer();
+    cell.addSpacer();
   }
+
+  /* Перезапрос снимка: на границе состояния, но не реже чем раз в 15 минут
+     (бюджет обновлений iOS ограничен; сам отсчёт при этом тикает всегда). */
+  const refreshAt = new Date(now.getTime() + 15 * 60 * 1000);
+  const boundary = st.kind === "idle" ? null : boundaryDate(st);
+  if (boundary && boundary > now) {
+    const atBoundary = new Date(boundary.getTime() + 30 * 1000);
+    if (atBoundary < refreshAt) refreshAt.setTime(atBoundary.getTime());
+  }
+  w.refreshAfterDate = refreshAt;
 
   /* Строка «Далее: …» — что идёт после показанной пары (кроме medium: там список). */
   if (st.kind !== "idle" && config.widgetFamily !== "medium") {
@@ -426,6 +446,7 @@ if (!data || !data.times || !data.groups) {
   err.addText("Расписание 307");
   err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
   err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
+  err.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
   if (!config.runsInWidget) await err.presentSmall();
   Script.setWidget(err);
   Script.complete();
