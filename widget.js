@@ -17,7 +17,7 @@ const MONTHS = ["января", "февраля", "марта", "апреля", 
 /* ---------- загрузка данных ---------- */
 function fetchSchedule() {
   const fm = FileManager.local();
-  const path = fm.joinPath(FileManager.documentsDirectory(), WIDGET_CACHE);
+  const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
   try {
     const req = new Request(DATA_URL, { timeoutInterval: 10 });
     const txt = req.loadString();
