@@ -21,6 +21,23 @@ const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
 const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
 const C_ACCENT = Color.dynamic(new Color("#007aff"), new Color("#0a84ff"));
 
+/* Короткие имена пар для компактного показа; неизвестные показываем как есть. */
+const SHORT_NAMES = {
+  "Аудирование текстов (второй иностранный язык)": "Аудирование (2-й иностр.)",
+  "К/В Культура иноязычного общения (на английском языке)": "Культура общения",
+  "К/В Практикум по межкультурному общению (на английском языке)": "Межкульт. практикум",
+  "К/В Современная письменная коммуникация на английском языке": "Письм. коммуникация",
+  "Методика обучения и воспитания в области второго иностранного языка": "Методика (2-й иностр.)",
+  "Методика обучения и воспитания в области первого иностранного (английского) языка": "Методика (англ. яз.)",
+  "Практика по профилю подготовки (в области иностранных языков)": "Практика",
+  "Практический курс английского языка": "Англ. яз. (практ.)",
+  "Практический курс второго иностранного языка": "2-й иностр. (практ.)",
+  "Синтаксис второго иностранного языка": "Синтаксис (2-й иностр.)",
+  "Финансово-экономический практикум": "Фин.-экон. практикум",
+  "Чтение художественного текста на английском языке": "Чтение (англ. яз.)"
+};
+function shortName(n) { return SHORT_NAMES[n] || n; }
+
 /* ---------- загрузка данных ---------- */
 /* По докам Scriptable: Request.loadString/loadJSON/load — Promise-based, await обязателен. */
 let fetchError = "";   // причина последнего сбоя — показываем в заглушке
@@ -187,10 +204,14 @@ function liveState(data, timesMin, group) {
   }
   if (rest.length) {
     const nxt = rest[0];
+    /* Дуга «до пары» заполняется от конца предыдущей пары (или за 2 ч до первой). */
+    const prevEnd = ls.filter(l => l.end <= nm).pop();
+    const from = prevEnd ? prevEnd.end : nxt.start - 120;
+    const span = Math.max(1, nxt.start - from);
     return {
       kind: "next", lesson: nxt,
       waitMin: nxt.start - nm,
-      frac: 0,
+      frac: Math.max(0, Math.min(1, (nm - from) / span)),
       later: rest.slice(1), now: new Date(now.getTime())
     };
   }
@@ -258,10 +279,10 @@ function ringImage(frac, centerText, pt) {
   }
 
   if (centerText) {
-    dc.setFont(Font.semiboldSystemFont(Math.round(S * 0.17)));
+    dc.setFont(Font.semiboldSystemFont(Math.round(S * 0.21)));
     dc.setTextColor(txtC);
     dc.setTextAlignedCenter();
-    dc.drawTextInRect(centerText, new Rect(0, S / 2 - S * 0.12, S, S * 0.24));
+    dc.drawTextInRect(centerText, new Rect(0, S / 2 - S * 0.15, S, S * 0.3));
   }
   return dc.getImage();
 }
@@ -281,7 +302,7 @@ function addHeader(w, group, isSmall) {
   return h;
 }
 
-function addLessonRow(list, l, isCurrent, leftMin) {
+function addLessonRow(list, l) {
   const row = list.addStack();
   row.layoutHorizontally();
   row.spacing = 6;
@@ -291,16 +312,16 @@ function addLessonRow(list, l, isCurrent, leftMin) {
   tc.size = new Size(42, 0);
   const time = tc.addText(hhmm(l.start));
   time.font = Font.mediumSystemFont(13);
-  time.textColor = isCurrent ? C_ACCENT : C_TEXT;
-  const name = row.addText(l.name);
-  name.font = isCurrent ? Font.semiboldSystemFont(14) : Font.regularSystemFont(14);
+  time.textColor = C_TEXT;
+  const name = row.addText(shortName(l.name));
+  name.font = Font.regularSystemFont(14);
   name.textColor = C_TEXT;
   name.lineLimit = 1;
   name.minimumScaleFactor = 0.8;
   row.addSpacer();
-  const right = row.addText(isCurrent && leftMin != null ? "ещё " + minTxt(leftMin) : (l.aud ? "ауд. " + l.aud : ""));
-  right.font = isCurrent ? Font.semiboldSystemFont(12) : Font.regularSystemFont(12);
-  right.textColor = isCurrent ? C_ACCENT : C_SUB;
+  const right = row.addText(l.aud ? "ауд. " + l.aud : "");
+  right.font = Font.regularSystemFont(12);
+  right.textColor = C_SUB;
   right.lineLimit = 1;
   return row;
 }
@@ -339,7 +360,7 @@ async function createWidget(data, timesMin, group) {
     const label = left.addText(st.kind === "now" ? "Сейчас" : "Следующая");
     label.font = Font.semiboldSystemFont(10);
     label.textColor = C_SUB;
-    const name = left.addText(st.lesson.name);
+    const name = left.addText(shortName(st.lesson.name));
     name.font = Font.semiboldSystemFont(15);
     name.textColor = C_TEXT;
     name.lineLimit = 2;
@@ -356,20 +377,20 @@ async function createWidget(data, timesMin, group) {
 
     body.addSpacer();
     const ring = body.addImage(ringImage(
-      st.kind === "now" ? st.frac : 0,
+      st.frac,
       st.kind === "now" ? minTxt(st.leftMin) : minTxt(st.waitMin), 40));
     ring.imageSize = new Size(40, 40);
   }
 
-  /* Строка «Далее: …» — что идёт после показанной пары. */
-  if (st.kind !== "idle") {
+  /* Строка «Далее: …» — что идёт после показанной пары (кроме medium: там список). */
+  if (st.kind !== "idle" && config.widgetFamily !== "medium") {
     const nx = nextAfter(data, timesMin, group, st);
     if (nx) {
       w.addSpacer();
       const sameDay = nx.dayIdx === todayIndex();
       const tail = sameDay ? hhmm(nx.start)
         : DAY_SHORT[nx.dayIdx] + ", " + hhmm(nx.start);
-      const foot = w.addText("Далее: " + nx.name + ", " + tail);
+      const foot = w.addText("Далее: " + shortName(nx.name) + ", " + tail);
       foot.font = Font.regularSystemFont(10);
       foot.textColor = C_SUB;
       foot.lineLimit = 1;
@@ -377,15 +398,14 @@ async function createWidget(data, timesMin, group) {
     }
   }
 
-  /* medium: список из трёх ближайших пар вместо крупного блока */
-  if (config.widgetFamily === "medium" && st.kind !== "idle") {
+  /* medium: герой уже показан, ниже — до двух последующих пар без дублей */
+  if (config.widgetFamily === "medium" && st.kind !== "idle" && st.later.length) {
     w.addSpacer(6);
-    const pool = [st.lesson].concat(st.later.slice(0, 2));
     const list = w.addStack();
     list.layoutVertically();
     list.spacing = 7;
-    for (let i = 0; i < pool.length; i++) {
-      addLessonRow(list, pool[i], i === 0 && st.kind === "now", i === 0 ? st.leftMin : null);
+    for (let i = 0; i < Math.min(2, st.later.length); i++) {
+      addLessonRow(list, st.later[i]);
     }
   }
 
