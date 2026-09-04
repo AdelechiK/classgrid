@@ -21,6 +21,12 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
   .page a { color: var(--accent); }
   .page .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin: 14px 0; box-shadow: 0 1px 0 var(--line); font-size: 13px; line-height: 1.55; }
   .back { display: inline-block; margin-bottom: 18px; font-size: 13px; color: var(--accent); text-decoration: none; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
+  .btns a, .btns button { appearance: none; -webkit-appearance: none; border: none; font: inherit; font-size: 14px; font-weight: 600; padding: 11px 16px; border-radius: 12px; text-decoration: none; cursor: pointer; }
+  .btn-dl { background: var(--accent); color: #fff; flex: 1; text-align: center; min-width: 150px; }
+  .btn-cp { background: var(--card); color: var(--accent); box-shadow: 0 1px 0 var(--line); flex: 1; text-align: center; min-width: 150px; }
+  .btn-cp:disabled { color: var(--fg2); }
+
 </style>
 </head>
 <body>
@@ -29,10 +35,15 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
   <h1>Виджет на главный экран</h1>
   <p class="lead">Виджет показывает текущую или следующую пару и работает без открытия сайта. Нужен iPhone и бесплатное приложение Scriptable.</p>
 
+  <div class="btns">
+    <a class="btn-dl" href="widget.js" download="Расписание 307.js">Скачать скрипт</a>
+    <button class="btn-cp" id="copyBtn" type="button">Скопировать код</button>
+  </div>
+
   <ol>
     <li>Установите <a href="https://apps.apple.com/app/scriptable/id1401844592" target="_blank" rel="noopener">Scriptable</a> из App Store.</li>
-    <li>Откройте <a href="widget.js" target="_blank">файл виджета</a> и скопируйте весь текст.</li>
-    <li>В Scriptable нажмите «+», вставьте текст, назовите скрипт «Расписание 307» и сохраните.</li>
+    <li>Нажмите «Скачать скрипт» — файл появится в Загрузках (или в «Файлах»). Откройте его и выберите «Поделиться», затем Scriptable — скрипт импортируется сам. Либо нажмите «Скопировать код», в Scriptable нажмите «+» и вставьте текст.</li>
+    <li>Назовите скрипт «Расписание 307» и сохраните.</li>
     <li>На главном экране удерживайте палец до дрожания, нажмите «+», найдите Scriptable и добавьте виджет.</li>
     <li>В настройках виджета выберите скрипт «Расписание 307» и в поле Parameter укажите группу: <b>А</b> или <b>Б</b>.</li>
   </ol>
@@ -44,6 +55,16 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
 <script>
 try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=__s.theme||(__d?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}
 var __m=document.getElementById("metaTheme");if(__m)__m.content=document.documentElement.dataset.theme==="dark"?"#000000":"#ffffff";
+(function(){
+  var btn=document.getElementById("copyBtn");
+  if(!btn)return;
+  btn.addEventListener("click",function(){
+    fetch("widget.js",{cache:"no-store"}).then(function(r){return r.text()}).then(function(t){
+      if(navigator.clipboard&&navigator.clipboard.writeText){return navigator.clipboard.writeText(t)}
+      var ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
+    }).then(function(){btn.textContent="Скопировано";btn.disabled=true;setTimeout(function(){btn.textContent="Скопировать код";btn.disabled=false},2500)}).catch(function(){btn.textContent="Не удалось — скачайте файл"});
+  });
+})();
 </script>
 </body>
 </html>
