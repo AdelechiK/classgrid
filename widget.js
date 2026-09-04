@@ -7,6 +7,11 @@ const DATA_URL = "https://adelechik.github.io/classgrid/data.js";
 const SEMESTER_START = new Date(2026, 8, 1);   // 2026-09-01
 const MAX_WEEK = 17;
 const WIDGET_CACHE = "schedule307-data.json";
+/* Цвета по докам Scriptable: у Color нет primary/secondaryText — только именованные
+   цвета, Color.dynamic(light, dark) и new Color("#hex"). */
+const C_TEXT = Color.dynamic(new Color("#000000"), new Color("#ffffff"));
+const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
+const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
 
 const DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
 const DAY_ACC = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
@@ -210,12 +215,12 @@ function liveState(data, timesMin, group) {
 function makeRow(stack, name, sub, isBold) {
   const t = stack.addText(name);
   t.font = isBold ? Font.semiboldSystemFont(13) : Font.regularSystemFont(12);
-  t.textColor = isBold ? Color.primary() : Color.secondaryText();
+  t.textColor = isBold ? C_TEXT : C_SUB;
   t.lineLimit = 2;
   if (sub) {
     const s = stack.addText(sub);
     s.font = Font.regularSystemFont(11);
-    s.textColor = Color.secondaryText();
+    s.textColor = C_SUB;
     s.lineLimit = 2;
   }
 }
@@ -223,26 +228,25 @@ function makeRow(stack, name, sub, isBold) {
 async function createWidget(data, timesMin, group) {
   const w = new ListWidget();
   w.setPadding(14, 14, 14, 14);
-  const bg = Device.isUsingDarkAppearance() ? new Color("#1c1c1e") : new Color("#ffffff");
-  w.backgroundColor = bg;
+  w.backgroundColor = C_BG;
   const now = new Date();
 
   const st = liveState(data, timesMin, group);
   const head = w.addText("Расписание 307 — " + group);
   head.font = Font.mediumSystemFont(10);
-  head.textColor = Color.secondaryText();
+  head.textColor = C_SUB;
   head.textOpacity = 0.9;
   w.addSpacer(4);
 
   const title = w.addText(st.title);
   title.font = Font.semiboldSystemFont(14);
-  title.textColor = Color.primary();
+  title.textColor = C_TEXT;
   title.lineLimit = 3;
   if (st.sub) {
     w.addSpacer(2);
     const sub = w.addText(st.sub);
     sub.font = Font.regularSystemFont(12);
-    sub.textColor = Color.secondaryText();
+    sub.textColor = C_SUB;
     sub.lineLimit = 3;
   }
 
@@ -272,7 +276,7 @@ async function createWidget(data, timesMin, group) {
   w.addSpacer();
   const upd = w.addText("Обновлено " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()));
   upd.font = Font.regularSystemFont(9);
-  upd.textColor = Color.secondaryText();
+  upd.textColor = C_SUB;
   upd.textOpacity = 0.7;
   return w;
 }
