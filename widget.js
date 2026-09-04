@@ -1,23 +1,25 @@
 /* Виджет «Расписание 307» для Scriptable (iOS).
-   Показывает текущую или следующую пару для группы А или Б.
+   Минималистичный нативный дизайн: лейбл, название пары, кольцо-таймер
+   (сколько осталось до конца текущей пары или до начала следующей).
    Данные: https://adelechik.github.io/classgrid/data.js, кэш в FileManager.local().
-   Параметр виджета: «А» или «Б». */
+   Параметр виджета: «А» или «Б». Тап по виджету открывает сайт. */
 
 const DATA_URL = "https://adelechik.github.io/classgrid/data.js";
+const SITE_URL = "https://adelechik.github.io/classgrid/";
 const SEMESTER_START = new Date(2026, 8, 1);   // 2026-09-01
 const MAX_WEEK = 17;
 const WIDGET_CACHE = "schedule307-data.json";
-/* Цвета по докам Scriptable: у Color нет primary/secondaryText — только именованные
-   цвета, Color.dynamic(light, dark) и new Color("#hex"). */
-const C_TEXT = Color.dynamic(new Color("#000000"), new Color("#ffffff"));
-const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
-const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
 
 const DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
-const DAY_ACC = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
 const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+/* Цвета по докам Scriptable: Color.dynamic(light, dark) и new Color("#hex"). */
+const C_TEXT = Color.dynamic(new Color("#000000"), new Color("#ffffff"));
+const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
+const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
+const C_ACCENT = Color.dynamic(new Color("#007aff"), new Color("#0a84ff"));
 
 /* ---------- загрузка данных ---------- */
 /* По докам Scriptable: Request.loadString/loadJSON/load — Promise-based, await обязателен. */
@@ -27,7 +29,7 @@ async function fetchSchedule() {
   const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
   try {
     console.log("Сеть: запрашиваю " + DATA_URL);
-    const req = new Request(DATA_URL, { timeoutInterval: 10 });
+    const req = new Request(DATA_URL);
     const txt = await req.loadString();
     if (typeof txt !== "string") throw new Error("пустой ответ");
     let data = null, raw = null;
@@ -154,130 +156,239 @@ function nextLesson(data, timesMin, group, afterDate) {
 
 function hhmm(min) { return pad2(Math.floor(min / 60)) + ":" + pad2(min % 60); }
 
-function plural(n, one, few, many) {
-  const m10 = n % 10, m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-  return many;
+/* Минуты в компактный вид для кольца: «45 мин», «1 ч 20». */
+function minTxt(min) {
+  if (min < 60) return min + " мин";
+  return Math.floor(min / 60) + " ч" + (min % 60 ? " " + pad2(min % 60) : "");
 }
 
-/* ---------- состояние «сейчас/далее» ---------- */
+/* ---------- состояние «сейчас / скоро / свободно» ---------- */
+/* kind: now — пара идёт; next — до начала есть время; idle — сегодня пар нет. */
 function liveState(data, timesMin, group) {
   const now = new Date();
   const nm = now.getHours() * 60 + now.getMinutes();
   const dow = todayIndex();
   const week = weekOf(now);
-  const todayText = (info, tail) => {
-    const when = info.date.getTime() === new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
-      ? "Завтра" : DAY_ACC[info.dayIdx] + ", " + info.date.getDate() + " " + MONTHS[info.date.getMonth()];
-    return when + ": " + info.count + " " + plural(info.count, "пара", "пары", "пар") + ", первая в " + hhmm(info.first.start) + (tail ? tail(info.first) : "");
-  };
+  const nextInfo = nextLesson(data, timesMin, group, now);
+  if (!nextInfo) return { kind: "idle", title: "Каникулы", meta: "" };
 
-  if (dow > 5 || week < 1 || week > MAX_WEEK) {
-    const nx = nextLesson(data, timesMin, group, now);
-    if (!nx) return { title: "Каникулы", sub: "" };
-    return { title: "Сегодня пар нет", sub: todayText(nx) };
+  const inWeek = dow <= 5 && week >= 1 && week <= MAX_WEEK;
+  const ls = inWeek ? lessonsOfDay(data, timesMin, group, dow, week) : [];
+  const rest = ls.filter(l => l.end > nm);
+
+  if (rest.length && rest[0].start <= nm) {
+    const cur = rest[0];
+    return {
+      kind: "now", lesson: cur,
+      leftMin: cur.end - nm,
+      frac: (nm - cur.start) / (cur.end - cur.start),
+      later: rest.slice(1), now: new Date(now.getTime())
+    };
+  }
+  if (rest.length) {
+    const nxt = rest[0];
+    return {
+      kind: "next", lesson: nxt,
+      waitMin: nxt.start - nm,
+      frac: 0,
+      later: rest.slice(1), now: new Date(now.getTime())
+    };
   }
 
-  const ls = lessonsOfDay(data, timesMin, group, dow, week);
-  if (!ls.length) {
-    const nx = nextLesson(data, timesMin, group, now);
-    if (!nx) return { title: "Сегодня пар нет", sub: "" };
-    return { title: "Сегодня пар нет", sub: todayText(nx) };
+  const title = !inWeek && week > MAX_WEEK ? "Каникулы" : "Сегодня пар нет";
+  const when = DAY_SHORT[nextInfo.dayIdx] + ", " + nextInfo.date.getDate() + " " +
+    MONTHS[nextInfo.date.getMonth()] + ", " + hhmm(nextInfo.first.start);
+  return { kind: "idle", title: title, meta: "Далее: " + when, now: new Date(now.getTime()) };
+}
+
+/* Ближайшая пара после текущей/следующей — для строки «Далее: …». */
+function nextAfter(data, timesMin, group, st) {
+  if (st.later && st.later.length) {
+    return { name: st.later[0].name, start: st.later[0].start, dayIdx: todayIndex() };
+  }
+  const base = st.now || new Date();
+  const nx = nextLesson(data, timesMin, group, new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1));
+  if (!nx) return null;
+  return { name: nx.first.name, start: nx.first.start, dayIdx: nx.dayIdx };
+}
+
+/* ---------- кольцо-таймер (DrawContext + Path) ---------- */
+/* Дуга — кубические Безье (у Path нет arc), концы закруглены эллипсами.
+   Рисуем в 3x и уменьшаем через imageSize — чётко на Retina.
+   Внутри канвы dynamic-цвета запрещены — выбираем по оформлению устройства. */
+function ringImage(frac, centerText, pt) {
+  const S = pt * 3;
+  const lw = Math.max(8, Math.round(S * 0.085));
+  const r = (S - lw) / 2;
+  const dark = Device.isUsingDarkAppearance();
+  const trackC = new Color(dark ? "#38383a" : "#e5e5ea");
+  const accC = new Color(dark ? "#0a84ff" : "#007aff");
+  const txtC = new Color(dark ? "#98989f" : "#6e6e73");
+  const dc = new DrawContext();
+  dc.size = new Size(S, S);
+  dc.opaque = false;
+  dc.setStrokeColor(trackC);
+  dc.setLineWidth(lw);
+  dc.strokeEllipse(new Rect(lw / 2, lw / 2, S - lw, S - lw));
+
+  const f = Math.max(0, Math.min(1, frac));
+  if (f > 0.005) {
+    const cx = S / 2, cy = S / 2;
+    const ptOn = a => new Point(cx + r * Math.sin(a), cy - r * Math.cos(a));
+    const total = f * 2 * Math.PI;
+    const p = new Path();
+    p.move(ptOn(0));
+    for (let a = 0; a < total - 1e-6; a += Math.PI / 2) {
+      const b = Math.min(a + Math.PI / 2, total);
+      const k = (4 / 3) * Math.tan((b - a) / 4);
+      const t1 = new Point(Math.cos(a), Math.sin(a));
+      const t2 = new Point(Math.cos(b), Math.sin(b));
+      const P1 = ptOn(b);
+      p.addCurve(P1,
+        new Point(ptOn(a).x + t1.x * r * k, ptOn(a).y + t1.y * r * k),
+        new Point(P1.x - t2.x * r * k, P1.y - t2.y * r * k));
+    }
+    dc.addPath(p);
+    dc.setStrokeColor(accC);
+    dc.strokePath();
+    dc.setFillColor(accC);
+    for (const q of [ptOn(0), ptOn(total)]) {
+      dc.fillEllipse(new Rect(q.x - lw / 2, q.y - lw / 2, lw, lw));
+    }
   }
 
-  let cur = null, nextToday = null;
-  for (const l of ls) {
-    if (nm >= l.start && nm < l.end) { cur = l; }
-    if (!nextToday && l.start > nm) { nextToday = l; }
+  if (centerText) {
+    dc.setFont(Font.semiboldSystemFont(Math.round(S * 0.17)));
+    dc.setTextColor(txtC);
+    dc.setTextAlignedCenter();
+    dc.drawTextInRect(centerText, new Rect(0, S / 2 - S * 0.12, S, S * 0.24));
   }
-
-  if (cur) {
-    const left = cur.end - nm;
-    const leftTxt = left < 60 ? "осталось " + left + " мин"
-      : "осталось " + Math.floor(left / 60) + " ч " + pad2(left % 60) + " мин";
-    const aud = cur.aud ? ", ауд. " + cur.aud : "";
-    return { title: "Сейчас: " + cur.name + aud, sub: "до " + hhmm(cur.end) + ", " + leftTxt, now: true };
-  }
-  if (nextToday) {
-    const wait = nextToday.start - nm;
-    const waitTxt = wait < 60 ? "через " + wait + " мин"
-      : "через " + Math.floor(wait / 60) + " ч " + pad2(wait % 60) + " мин";
-    const aud = nextToday.aud ? ", ауд. " + nextToday.aud : "";
-    return { title: waitTxt + ", в " + hhmm(nextToday.start) + " — " + nextToday.name + aud, sub: "" };
-  }
-  const nx = nextLesson(data, timesMin, group, now);
-  if (!nx) return { title: "На сегодня всё", sub: "" };
-  return { title: "На сегодня всё", sub: todayText(nx) };
+  return dc.getImage();
 }
 
 /* ---------- отрисовка ---------- */
-function makeRow(stack, name, sub, isBold) {
-  const t = stack.addText(name);
-  t.font = isBold ? Font.semiboldSystemFont(13) : Font.regularSystemFont(12);
-  t.textColor = isBold ? C_TEXT : C_SUB;
-  t.lineLimit = 2;
-  if (sub) {
-    const s = stack.addText(sub);
-    s.font = Font.regularSystemFont(11);
-    s.textColor = C_SUB;
-    s.lineLimit = 2;
-  }
+function addHeader(w, group, isSmall) {
+  const h = w.addStack();
+  h.layoutHorizontally();
+  const t1 = h.addText(isSmall ? "Расписание 307" : "Расписание 307, " + group);
+  t1.font = Font.semiboldSystemFont(10);
+  t1.textColor = C_SUB;
+  h.addSpacer();
+  const week = weekOf(new Date());
+  const t2 = h.addText(week >= 1 && week <= MAX_WEEK ? "Нед. " + week : "");
+  t2.font = Font.regularSystemFont(10);
+  t2.textColor = C_SUB;
+  return h;
+}
+
+function addLessonRow(list, l, isCurrent, leftMin) {
+  const row = list.addStack();
+  row.layoutHorizontally();
+  row.spacing = 6;
+  row.centerAlignContent();
+  const tc = row.addStack();
+  tc.layoutHorizontally();
+  tc.size = new Size(42, 0);
+  const time = tc.addText(hhmm(l.start));
+  time.font = Font.mediumSystemFont(13);
+  time.textColor = isCurrent ? C_ACCENT : C_TEXT;
+  const name = row.addText(l.name);
+  name.font = isCurrent ? Font.semiboldSystemFont(14) : Font.regularSystemFont(14);
+  name.textColor = C_TEXT;
+  name.lineLimit = 1;
+  name.minimumScaleFactor = 0.8;
+  row.addSpacer();
+  const right = row.addText(isCurrent && leftMin != null ? "ещё " + minTxt(leftMin) : (l.aud ? "ауд. " + l.aud : ""));
+  right.font = isCurrent ? Font.semiboldSystemFont(12) : Font.regularSystemFont(12);
+  right.textColor = isCurrent ? C_ACCENT : C_SUB;
+  right.lineLimit = 1;
+  return row;
 }
 
 async function createWidget(data, timesMin, group) {
-  const w = new ListWidget();
-  w.setPadding(14, 14, 14, 14);
-  w.backgroundColor = C_BG;
-  const now = new Date();
-
   const st = liveState(data, timesMin, group);
-  const head = w.addText("Расписание 307 — " + group);
-  head.font = Font.mediumSystemFont(10);
-  head.textColor = C_SUB;
-  head.textOpacity = 0.9;
-  w.addSpacer(4);
+  const w = new ListWidget();
+  w.setPadding(14, 15, 14, 15);
+  w.backgroundColor = C_BG;
+  w.url = SITE_URL;   // тап по виджету открывает сайт в браузере по умолчанию
+  const now = st.now || new Date();
 
-  const title = w.addText(st.title);
-  title.font = Font.semiboldSystemFont(14);
-  title.textColor = C_TEXT;
-  title.lineLimit = 3;
-  if (st.sub) {
-    w.addSpacer(2);
-    const sub = w.addText(st.sub);
-    sub.font = Font.regularSystemFont(12);
-    sub.textColor = C_SUB;
-    sub.lineLimit = 3;
+  addHeader(w, group, config.widgetFamily !== "medium");
+  w.addSpacer(8);
+
+  if (st.kind === "idle") {
+    const title = w.addText(st.title);
+    title.font = Font.semiboldSystemFont(15);
+    title.textColor = C_TEXT;
+    title.lineLimit = 2;
+    if (st.meta) {
+      w.addSpacer(3);
+      const meta = w.addText(st.meta);
+      meta.font = Font.regularSystemFont(11);
+      meta.textColor = C_SUB;
+      meta.lineLimit = 1;
+      meta.minimumScaleFactor = 0.85;
+    }
+  } else {
+    const body = w.addStack();
+    body.layoutHorizontally();
+    body.centerAlignContent();
+    const left = body.addStack();
+    left.layoutVertically();
+    left.spacing = 3;
+    const label = left.addText(st.kind === "now" ? "Сейчас" : "Следующая");
+    label.font = Font.semiboldSystemFont(10);
+    label.textColor = C_SUB;
+    const name = left.addText(st.lesson.name);
+    name.font = Font.semiboldSystemFont(15);
+    name.textColor = C_TEXT;
+    name.lineLimit = 2;
+    name.minimumScaleFactor = 0.85;
+    const aud = st.lesson.aud ? ", ауд. " + st.lesson.aud : "";
+    const metaTxt = st.kind === "now"
+      ? "до " + hhmm(st.lesson.end) + aud
+      : "в " + hhmm(st.lesson.start) + aud;
+    const meta = left.addText(metaTxt);
+    meta.font = Font.regularSystemFont(11);
+    meta.textColor = C_SUB;
+    meta.lineLimit = 1;
+    meta.minimumScaleFactor = 0.85;
+
+    body.addSpacer();
+    const ring = body.addImage(ringImage(
+      st.kind === "now" ? st.frac : 0,
+      st.kind === "now" ? minTxt(st.leftMin) : minTxt(st.waitMin), 40));
+    ring.imageSize = new Size(40, 40);
   }
 
-  /* medium: ещё 1–2 следующие пары */
-  if (config.widgetFamily === "medium") {
-    const dow = todayIndex();
-    const week = weekOf(now);
-    let pool = [];
-    if (dow <= 5 && week >= 1 && week <= MAX_WEEK) {
-      pool = lessonsOfDay(data, timesMin, group, dow, week)
-        .filter(l => l.end > now.getHours() * 60 + now.getMinutes())
-        .slice(0, 2);
-    }
-    if (!pool.length) {
-      const nx = nextLesson(data, timesMin, group, now);
-      pool = nx ? nx.lessons.slice(0, 2) : [];
-    }
-    if (pool.length) {
-      w.addSpacer(6);
-      for (const l of pool) {
-        makeRow(w, hhmm(l.start) + "  " + l.name, l.aud ? "ауд. " + l.aud : "", false);
-        w.addSpacer(2);
-      }
+  /* Строка «Далее: …» — что идёт после показанной пары. */
+  if (st.kind !== "idle") {
+    const nx = nextAfter(data, timesMin, group, st);
+    if (nx) {
+      w.addSpacer();
+      const sameDay = nx.dayIdx === todayIndex();
+      const tail = sameDay ? hhmm(nx.start)
+        : DAY_SHORT[nx.dayIdx] + ", " + hhmm(nx.start);
+      const foot = w.addText("Далее: " + nx.name + ", " + tail);
+      foot.font = Font.regularSystemFont(10);
+      foot.textColor = C_SUB;
+      foot.lineLimit = 1;
+      foot.minimumScaleFactor = 0.8;
     }
   }
 
-  w.addSpacer();
-  const upd = w.addText("Обновлено " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()));
-  upd.font = Font.regularSystemFont(9);
-  upd.textColor = C_SUB;
-  upd.textOpacity = 0.7;
+  /* medium: список из трёх ближайших пар вместо крупного блока */
+  if (config.widgetFamily === "medium" && st.kind !== "idle") {
+    w.addSpacer(6);
+    const pool = [st.lesson].concat(st.later.slice(0, 2));
+    const list = w.addStack();
+    list.layoutVertically();
+    list.spacing = 7;
+    for (let i = 0; i < pool.length; i++) {
+      addLessonRow(list, pool[i], i === 0 && st.kind === "now", i === 0 ? st.leftMin : null);
+    }
+  }
+
   return w;
 }
 
@@ -291,6 +402,7 @@ const data = await fetchSchedule();
 if (!data || !data.times || !data.groups) {
   console.error("Итог: нет данных — " + (fetchError || "нет сети и кэша"));
   const err = new ListWidget();
+  err.url = SITE_URL;
   err.addText("Расписание 307");
   err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
   err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
