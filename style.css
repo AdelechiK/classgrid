@@ -334,7 +334,7 @@ html[data-theme="dark"] .nowcard { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05)
 @media (max-width: 768px) {
   /* на мобиле панель уезжает при скролле, липкой остаётся строка заголовка:
      .hdr sticky, панель .panel скрывается классом .collapsed (ставит app.js) */
-  .hdr { position: sticky; top: 0; z-index: 20; border-bottom: none; background: var(--topbar-bg); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); margin: 0 -16px; padding: 0 16px; }
+  .hdr { position: sticky; top: 0; z-index: 20; border-bottom: none; background: var(--topbar-bg); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); margin: 0; padding: 0 16px; }
   .hdr .topbar { position: static; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 1px 0 var(--line); }
   .hdr .panel { overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s ease; max-height: 320px; opacity: 1; }
   .hdr.collapsed .panel { max-height: 0; opacity: 0; padding-bottom: 0; }
