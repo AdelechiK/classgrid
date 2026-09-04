@@ -3,7 +3,11 @@
    Данные: https://classgrid.pages.dev/data.js, кэш в FileManager.local().
    Параметр виджета: «А» или «Б». */
 
-const DATA_URL = "https://classgrid.pages.dev/data.js";
+/* Два источника: pages.dev основной, GitHub Pages резервный (доступен напрямую). */
+const DATA_URLS = [
+  "https://classgrid.pages.dev/data.js",
+  "https://adelechik.github.io/classgrid/data.js"
+];
 const SEMESTER_START = new Date(2026, 8, 1);   // 2026-09-01
 const MAX_WEEK = 17;
 const WIDGET_CACHE = "schedule307-data.json";
@@ -18,21 +22,23 @@ const MONTHS = ["января", "февраля", "марта", "апреля", 
 function fetchSchedule() {
   const fm = FileManager.local();
   const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
-  try {
-    const req = new Request(DATA_URL, { timeoutInterval: 10 });
-    const txt = req.loadString();
-    let data = null, raw = null;
-    for (const line of txt.split("\n")) {
-      if (line.indexOf("window.SCHEDULE_DATA") < 0) continue;
-      const s = line.indexOf("{"), e = line.lastIndexOf("}");
-      if (s >= 0 && e > s) { raw = line.slice(s, e + 1); break; }
-    }
-    if (raw) data = JSON.parse(raw);
-    if (data) {
-      fm.writeString(path, raw);
-      return data;
-    }
-  } catch (e) { /* сеть недоступна — читаем кэш */ }
+  for (const url of DATA_URLS) {
+    try {
+      const req = new Request(url, { timeoutInterval: 10 });
+      const txt = req.loadString();
+      let data = null, raw = null;
+      for (const line of txt.split("\n")) {
+        if (line.indexOf("window.SCHEDULE_DATA") < 0) continue;
+        const s = line.indexOf("{"), e = line.lastIndexOf("}");
+        if (s >= 0 && e > s) { raw = line.slice(s, e + 1); break; }
+      }
+      if (raw) data = JSON.parse(raw);
+      if (data) {
+        fm.writeString(path, raw);
+        return data;
+      }
+    } catch (e) { /* источник недоступен — пробуем следующий */ }
+  }
   if (fm.fileExists(path)) {
     try { return JSON.parse(fm.readString(path)); } catch (e) { return null; }
   }
@@ -272,7 +278,8 @@ const data = fetchSchedule();
 if (!data || !data.times || !data.groups) {
   const err = new ListWidget();
   err.addText("Расписание 307");
-  err.addText("Нет данных — открой Scriptable при интернете");
+  err.addText("Нет данных: включите интернет (и VPN) и откройте Scriptable — расписание сохранится для офлайна");
+  err.addText("Сайт: classgrid.pages.dev");
   Script.setWidget(err);
   Script.complete();
 } else {
