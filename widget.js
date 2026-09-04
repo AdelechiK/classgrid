@@ -17,7 +17,7 @@ const MONTHS = ["января", "февраля", "марта", "апреля", 
 /* ---------- загрузка данных ---------- */
 function fetchSchedule() {
   const fm = FileManager.local();
-  const path = fm.joinPath(fm.documentsDirectory, WIDGET_CACHE);
+  const path = fm.joinPath(FileManager.documentsDirectory(), WIDGET_CACHE);
   try {
     const req = new Request(DATA_URL, { timeoutInterval: 10 });
     const txt = req.loadString();
@@ -263,7 +263,6 @@ async function createWidget(data, timesMin, group) {
 }
 
 /* ---------- запуск ---------- */
-const fm = FileManager.local();
 let group = (args.widgetParameter || "А").trim().toUpperCase();
 if (group !== "А" && group !== "Б" && group !== "A" && group !== "B") group = "А";
 if (group === "A") group = "А";
