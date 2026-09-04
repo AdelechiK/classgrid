@@ -104,6 +104,10 @@ function weekRange(w) {
   return pad2(a.getDate()) + "." + pad2(a.getMonth() + 1) + "–" +
     pad2(b.getDate()) + "." + pad2(b.getMonth() + 1);
 }
+function parityOf(w) {
+  if (w < 1 || w > MAX_WEEK) return "";
+  return w % 2 ? "нечёт" : "чёт";
+}
 /* один слот: items | «Окно» | пустой край */
 function slotHTML(group, di, ti, week, opts) {
   var items = itemsFor(group, di, ti, week);
@@ -131,7 +135,8 @@ function daySectionHTML(group, di, week) {
   } else {
     rows = '<div class="dayempty">В этот день занятий нет</div>';
   }
-  return '<section class="day"><h2>' + DAYS[di] + ", " + dayDate(week, di) + "</h2>" + rows + "</section>";
+  return '<section class="day"><h2>' + DAYS[di] + ", " + dayDate(week, di) +
+    '<span class="h2w">нед. ' + week + " (" + parityOf(week) + ")</span></h2>" + rows + "</section>";
 }
 
 /* мобильная карточка дня для вида «Неделя»: только занятия и «Окна»,
@@ -146,7 +151,8 @@ function mdaySectionHTML(group, di, week) {
     if (before && after) rows += slotHTML(group, di, t, week);
   }
   if (!rows) rows = '<div class="dayempty">В этот день занятий нет</div>';
-  return '<section class="mday"><h2>' + DAYS[di] + ", " + dayDate(week, di) + "</h2>" + rows + "</section>";
+  return '<section class="mday"><h2>' + DAYS[di] + ", " + dayDate(week, di) +
+    '<span class="h2w">нед. ' + week + " (" + parityOf(week) + ")</span></h2>" + rows + "</section>";
 }
 
 /* неделя: десктоп-сетка (7 колонок × 7 строк) + карточки дней для мобилы */
@@ -180,6 +186,170 @@ function weekHTML(group, week) {
   html += "</div>";
   html += DAYS.map(function (_, di) { return mdaySectionHTML(group, di, week); }).join("");
   return html;
+}
+
+/* ---------- «Сейчас и далее» и статусы слотов ---------- */
+var TIMES_MIN = TIMES.map(function (t) {
+  var p = t.split("–"), a = p[0].split(":"), b = p[1].split(":");
+  return { start: (+a[0]) * 60 + (+a[1]), end: (+b[0]) * 60 + (+b[1]) };
+});
+var DAY_ACC = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
+var nowcardCache = "";
+
+function realDow() {
+  var n = new Date();
+  return (n.getDay() + 6) % 7;   // 0 = Пн … 5 = Сб, 6 = Вс
+}
+function nowMinutes() {
+  var n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+function hhmm(min) {
+  return pad2(Math.floor(min / 60)) + ":" + pad2(min % 60);
+}
+function plural(n, one, few, many) {
+  var m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+function audOf(dmeta, week) {
+  var i = (dmeta || "").lastIndexOf("ауд.");
+  if (i < 0) return "";
+  var tail = dmeta.slice(i + 4).trim();
+  var parts = tail.split(/,\s*/);
+  if (parts.length === 1) return tail;
+  /* перечень «аудитория (N нед.)» — выбираем по текущей неделе */
+  var pick = "", fallback = "";
+  for (var p = 0; p < parts.length; p++) {
+    var m = /^([^(]+?)\s*(?:\(([^)]*)\))?$/.exec(parts[p].trim());
+    if (!m) continue;
+    if (!fallback) fallback = m[1].trim();
+    if (week != null && m[2]) {
+      var r = m[2].split("–");
+      var from = parseInt(r[0], 10), to = r.length > 1 ? parseInt(r[1], 10) : from;
+      if (week >= from && week <= to) { pick = m[1].trim(); break; }
+    }
+  }
+  return pick || fallback || tail;
+}
+function lessonsOfDay(group, di, week) {
+  var res = [];
+  for (var ti = 0; ti < TIMES.length; ti++) {
+    var its = itemsFor(group, di, ti, week);
+    if (its.length) res.push({ ti: ti, item: its[0], start: TIMES_MIN[ti].start, end: TIMES_MIN[ti].end });
+  }
+  return res;
+}
+function nextLessonAfter(group, fromDate) {
+  for (var k = 1; k <= MAX_WEEK * 7; k++) {
+    var d = new Date(fromDate);
+    d.setDate(d.getDate() + k);
+    var raw = Math.floor((startOfDay(d) - SEMESTER_START) / 6048e5) + 1;
+    if (raw > MAX_WEEK) return null;
+    if (raw < 1) continue;
+    var di = (d.getDay() + 6) % 7;
+    if (di > 5) continue;
+    var ls = lessonsOfDay(group, di, raw);
+    if (ls.length) return { date: d, dayIdx: di, week: raw, first: ls[0], count: ls.length };
+  }
+  return null;
+}
+function minsLeft(min) {
+  if (min < 60) return "осталось " + min + " мин";
+  return "осталось " + Math.floor(min / 60) + " ч " + pad2(min % 60) + " мин";
+}
+function dayCountdownText(ls) {
+  var t = hhmm(ls.first.start);
+  var tomorrow = startOfDay(new Date()).getTime() + 864e5;
+  var when = ls.date.getTime() === tomorrow
+    ? "Завтра"
+    : DAY_ACC[ls.dayIdx].charAt(0).toUpperCase() + DAY_ACC[ls.dayIdx].slice(1) +
+      ", " + ls.date.getDate() + " " + MONTHS[ls.date.getMonth()];
+  return when + ": " + ls.count + " " + plural(ls.count, "пара", "пары", "пар") + ", первая в " + t;
+}
+function liveInfo() {
+  var di = realDow();
+  if (di > 5) return null;   // в воскресенье живой карточки нет
+  var ls = lessonsOfDay(state.group, di, TODAY.week);
+  var nm = nowMinutes();
+  if (!ls.length) {
+    var nx = nextLessonAfter(state.group, startOfDay(new Date()));
+    if (!nx) return null;
+    return { label: "Сегодня", isNow: false, title: "Сегодня пар нет",
+      sub: "Ближайшая пара — " + DAY_ACC[nx.dayIdx] + ", " + nx.date.getDate() + " " +
+        MONTHS[nx.date.getMonth()] + ", в " + hhmm(nx.first.start) + " — " + nx.first.item.name };
+  }
+  var i, cur = null, next = null;
+  for (i = 0; i < ls.length; i++) {
+    if (nm >= ls[i].start && nm < ls[i].end) { cur = ls[i]; break; }
+  }
+  if (cur) {
+    var sub = minsLeft(cur.end - nm);
+    var nx2 = null;
+    for (i = 0; i < ls.length; i++) if (ls[i].start > cur.start) { nx2 = ls[i]; break; }
+    if (nx2) {
+      sub += ". Далее в " + hhmm(nx2.start) + " — " + nx2.item.name;
+      var a2 = audOf(nx2.item.dmeta, TODAY.week);
+      if (a2) sub += ", ауд. " + a2;
+    } else {
+      sub += ". Это последняя пара на сегодня";
+    }
+    return { label: "Сейчас", isNow: true, title: cur.item.name + ", до " + hhmm(cur.end), sub: sub };
+  }
+  for (i = 0; i < ls.length; i++) if (ls[i].start > nm) { next = ls[i]; break; }
+  if (next) {
+    var a = audOf(next.item.dmeta, TODAY.week);
+    if (nm < ls[0].start) {
+      return { label: "Сегодня", isNow: false, title: "Первая пара в " + hhmm(next.start),
+        sub: next.item.name + (a ? ", ауд. " + a : "") };
+    }
+    return { label: "Сегодня", isNow: false, title: "Окно до " + hhmm(next.start),
+      sub: "Далее — " + next.item.name + (a ? ", ауд. " + a : "") };
+  }
+  var nx3 = nextLessonAfter(state.group, startOfDay(new Date()));
+  if (!nx3) return null;
+  return { label: "Сегодня", isNow: false, title: "На сегодня всё", sub: dayCountdownText(nx3) };
+}
+function viewingActualToday() {
+  return state.view === "day" && TODAY.inSemester && realDow() <= 5 &&
+    state.week === TODAY.week && state.day === TODAY.day;
+}
+function updateLive() {
+  var c = el("content");
+  if (!c || !viewingActualToday()) return;
+  var sec = c.querySelector("section.day");
+  var slots = sec ? sec.querySelectorAll(".slot") : [];
+  var nm = nowMinutes(), week = TODAY.week, di = realDow();
+  for (var ti = 0; ti < slots.length && ti < TIMES.length; ti++) {
+    var s = slots[ti];
+    if (!s.querySelector(".it")) continue;   // «Окна» и пустые крайние — без статуса
+    var m = TIMES_MIN[ti];
+    s.classList.remove("now", "soon", "past");
+    if (nm >= m.start && nm < m.end) s.classList.add("now");
+    else if (nm < m.start && m.start - nm <= 20) s.classList.add("soon");
+    else if (nm >= m.end) s.classList.add("past");
+  }
+  var info = liveInfo();
+  var card = el("nowcard");
+  if (!info) { if (card) card.remove(); nowcardCache = ""; return; }
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "nowcard";
+    card.className = "nowcard";
+    if (sec) c.insertBefore(card, sec); else c.appendChild(card);
+    nowcardCache = "";   // карточка новая — кэш от прежнего элемента невалиден
+  }
+  var html = '<div class="nc-label">' + esc(info.label) + "</div>" +
+    '<div class="nc-title">' + esc(info.title) + "</div>" +
+    '<div class="nc-sub">' + esc(info.sub) + "</div>";
+  if (nowcardCache !== html) {
+    card.innerHTML = html;
+    card.classList.toggle("is-now", !!info.isNow);
+    nowcardCache = html;
+  }
+  var em = el("emptyMsg");
+  if (em) em.hidden = true;   // «Сегодня пар нет» на карточке вместо общей заглушки
 }
 
 /* ---------- рендер ---------- */
@@ -256,7 +426,7 @@ function render() {
   if (TODAY.inSemester) {
     var now = new Date();
     badge.innerHTML = "<b>Сегодня</b>, " + now.getDate() + " " + MONTHS[now.getMonth()] +
-      " — неделя " + TODAY.week;
+      " — неделя " + TODAY.week + " (" + parityOf(TODAY.week) + ")";
     badge.hidden = false;
   } else {
     badge.hidden = true;
@@ -275,6 +445,77 @@ function render() {
   } else {
     c.innerHTML = weekHTML(state.group, state.week);
   }
+  syncWeekPill();
+  updateLive();
+}
+
+/* ---------- обновление TODAY при «пробуждении» PWA ---------- */
+function refreshToday() {
+  var t = todayInfo();
+  var changed = t.rawWeek !== TODAY.rawWeek || t.day !== TODAY.day;
+  if (!changed) { updateLive(); return; }
+  var wasOnToday = state.view === "day" && state.week === TODAY.week && state.day === TODAY.day;
+  TODAY = t;
+  if (wasOnToday && t.inSemester) {
+    state.week = t.week;
+    state.day = t.day;
+    state.view = "day";
+    save();
+  }
+  render();
+}
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") {
+    refreshToday();
+    checkDataVersion(false);
+  }
+});
+window.addEventListener("pageshow", refreshToday);
+
+/* ---------- версия данных и плашка обновления ---------- */
+var DATA_VERSION = (window.SCHEDULE_META && window.SCHEDULE_META.version) || "";
+var updateDismissed = false;
+var lastVersionCheck = 0;
+function checkDataVersion(force) {
+  if (updateDismissed || !DATA_VERSION) return;
+  var t = Date.now();
+  if (!force && t - lastVersionCheck < 18e5) return;   // не чаще раза в 30 минут
+  lastVersionCheck = t;
+  fetch("data.js", { cache: "no-store" }).then(function (r) {
+    return r.ok ? r.text() : null;
+  }).then(function (txt) {
+    if (!txt || updateDismissed) return;
+    var m = /"version"\s*:\s*"([0-9a-f]+)"/.exec(txt);
+    if (m && m[1] !== DATA_VERSION) showUpdateBanner();
+  }).catch(function () {});
+}
+function showUpdateBanner() {
+  var b = el("updateBanner");
+  if (b) { b.hidden = false; return; }
+  b = document.createElement("div");
+  b.id = "updateBanner";
+  b.className = "banner";
+  b.setAttribute("role", "dialog");
+  b.setAttribute("aria-label", "Доступно обновление расписания");
+  b.innerHTML = '<div class="banner-body"><p class="banner-title">Расписание обновилось</p>' +
+    '<p class="banner-text">Опубликована новая версия расписания.</p>' +
+    '<button class="banner-no" id="updateReload" type="button">Обновить</button></div>' +
+    '<button class="banner-x" id="updateClose" type="button" aria-label="Скрыть">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  document.body.appendChild(b);
+  el("updateReload").addEventListener("click", function () { location.reload(); });
+  el("updateClose").addEventListener("click", function () {
+    updateDismissed = true;
+    b.hidden = true;
+  });
+}
+function fillDataVersion() {
+  var dv = el("dataVersion");
+  if (!dv || !window.SCHEDULE_META || !window.SCHEDULE_META.generated) return;
+  var g = new Date(window.SCHEDULE_META.generated);
+  if (isNaN(g)) return;
+  dv.textContent = "Данные от " + g.getDate() + " " + MONTHS[g.getMonth()];
+  dv.hidden = false;
 }
 
 /* ---------- события ---------- */
@@ -302,6 +543,118 @@ el("backToday").addEventListener("click", function () {
   state.view = "day";
   save(); render();
 });
+
+/* ---------- пилюля недели (свёрнутая лента) ---------- */
+function syncWeekPill() {
+  var t = el("weekPillText");
+  if (t) t.textContent = "Неделя " + state.week + " (" + parityOf(state.week) + "), " + weekRange(state.week);
+  var row = el("weekRow"), pill = el("weekPill");
+  pill.setAttribute("aria-expanded", row.hidden ? "false" : "true");
+}
+el("weekPill").addEventListener("click", function () {
+  el("weekRow").hidden = !el("weekRow").hidden;
+  syncWeekPill();
+});
+document.addEventListener("click", function (e) {
+  var row = el("weekRow");
+  if (row.hidden) return;
+  if (row.contains(e.target) || el("weekPill").contains(e.target)) return;
+  row.hidden = true;
+  syncWeekPill();
+});
+
+/* ---------- экспорт в календарь (.ics) ---------- */
+function icsEscape(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;")
+    .replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+function icsLocal(date, min) {
+  return "" + date.getFullYear() + pad2(date.getMonth() + 1) + pad2(date.getDate()) +
+    "T" + pad2(Math.floor(min / 60)) + pad2(min % 60) + "00";
+}
+function teacherOf(dmeta) {
+  var m = /—\s*([^—]+?)\s*—\s*(?:ауд\.|ЦОР)/.exec(dmeta || "");
+  return m ? m[1].trim() : "";
+}
+function buildICS(group) {
+  var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//schedule307//classgrid//RU",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "X-WR-CALNAME:Расписание 307, группа " + group,
+    "X-WR-TIMEZONE:Europe/Moscow",
+    "BEGIN:VTIMEZONE", "TZID:Europe/Moscow", "BEGIN:STANDARD",
+    "DTSTART:19700101T000000", "TZOFFSETFROM:+0300", "TZOFFSETTO:+0300",
+    "TZNAME:MSK", "END:STANDARD", "END:VTIMEZONE"];
+  var stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  for (var di = 0; di < 6; di++) {
+    for (var ti = 0; ti < TIMES.length; ti++) {
+      var items = INDEX[group][di][ti] || [];
+      for (var n = 0; n < items.length; n++) {
+        var it = items[n], tm = TIMES_MIN[ti];
+        var weeks = (it.weeks || []).filter(function (w) { return w >= 1 && w <= MAX_WEEK; });
+        for (var wi = 0; wi < weeks.length; wi++) {
+          var d = new Date(SEMESTER_START);
+          d.setDate(d.getDate() + (weeks[wi] - 1) * 7 + (di - 1 + 7) % 7);
+          var tch = teacherOf(it.dmeta), aud = audOf(it.dmeta, weeks[wi]);
+          lines.push("BEGIN:VEVENT",
+            "UID:s307-" + group + "-" + di + "-" + ti + "-" + weeks[wi] + "@classgrid",
+            "DTSTAMP:" + stamp,
+            "DTSTART;TZID=Europe/Moscow:" + icsLocal(d, tm.start),
+            "DTEND;TZID=Europe/Moscow:" + icsLocal(d, tm.end),
+            "SUMMARY:" + icsEscape(it.name));
+          if (aud) lines.push("LOCATION:" + icsEscape("ауд. " + aud));
+          var desc = [];
+          if (tch) desc.push(tch);
+          if (aud) desc.push("ауд. " + aud);
+          if (it.shared) desc.push("смежная с другой группой");
+          if (desc.length) lines.push("DESCRIPTION:" + icsEscape(desc.join(", ")));
+          lines.push("END:VEVENT");
+        }
+      }
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return { text: lines.join("\r\n"), count: (lines.join("\n").match(/BEGIN:VEVENT/g) || []).length };
+}
+function downloadICS() {
+  var r = buildICS(state.group);
+  var blob = new Blob([r.text], { type: "text/calendar;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "raspisanie307-" + state.group + ".ics";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+}
+el("icsBtn").addEventListener("click", downloadICS);
+
+/* ---------- свайп влево-вправо: смена дня ---------- */
+(function () {
+  var sx = 0, sy = 0, tracking = false;
+  var main = el("main");
+  main.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  main.addEventListener("touchend", function (e) {
+    if (!tracking) return;
+    tracking = false;
+    if (state.view !== "day") return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 60 || Math.abs(dy) >= Math.abs(dx)) return;
+    var dir = dx < 0 ? 1 : -1;   // влево — следующий день
+    var nd = state.day + dir, nw = state.week;
+    if (nd > 5) { if (nw >= MAX_WEEK) return; nd = 0; nw++; }
+    if (nd < 0) { if (nw <= 1) return; nd = 5; nw--; }
+    state.day = nd;
+    state.week = nw;
+    save(); render();
+  }, { passive: true });
+})();
 
 el("themeBtn").addEventListener("click", function () {
   state.theme = state.theme === "dark" ? "light" : "dark";
@@ -396,8 +749,22 @@ try {
 } catch (e) {}
 syncThemeMeta();
 render();
+fillDataVersion();
+setInterval(updateLive, 30000);
+setTimeout(function () { checkDataVersion(true); }, 3000);
 
 /* ---------- service worker ---------- */
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(function () {});
 }
+
+/* ---------- мобайл: панель в шапке сворачивается при скролле ---------- */
+(function () {
+  var hdr = document.querySelector(".hdr");
+  if (!hdr) return;
+  var on = null;
+  window.addEventListener("scroll", function () {
+    var v = window.scrollY > 60;
+    if (v !== on) { on = v; hdr.classList.toggle("collapsed", v); }
+  }, { passive: true });
+})();

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" id="metaTheme">
+<title>Виджет — Расписание 307</title>
+<meta name="description" content="Как добавить виджет «Расписание 307» на главный экран iPhone через Scriptable.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script>
+try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=__s.theme||(__d?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}
+</script>
+<style>
+  .page { max-width: 640px; margin: 0 auto; padding: 20px 16px calc(40px + env(safe-area-inset-bottom)); }
+  .page h1 { font-size: 22px; margin: 0 0 6px; }
+  .page .lead { color: var(--fg2); font-size: 13px; margin: 0 0 20px; }
+  .page ol { margin: 0 0 18px; padding-left: 20px; }
+  .page li { margin: 8px 0; font-size: 14px; line-height: 1.5; }
+  .page a { color: var(--accent); }
+  .page .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin: 14px 0; box-shadow: 0 1px 0 var(--line); font-size: 13px; line-height: 1.55; }
+  .back { display: inline-block; margin-bottom: 18px; font-size: 13px; color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="page">
+  <a class="back" href="./">← Назад к расписанию</a>
+  <h1>Виджет на главный экран</h1>
+  <p class="lead">Виджет показывает текущую или следующую пару и работает без открытия сайта. Нужен iPhone и бесплатное приложение Scriptable.</p>
+
+  <ol>
+    <li>Установите <a href="https://apps.apple.com/app/scriptable/id1401844592" target="_blank" rel="noopener">Scriptable</a> из App Store.</li>
+    <li>Откройте <a href="widget.js" target="_blank">файл виджета</a> и скопируйте весь текст.</li>
+    <li>В Scriptable нажмите «+», вставьте текст, назовите скрипт «Расписание 307» и сохраните.</li>
+    <li>На главном экране удерживайте палец до дрожания, нажмите «+», найдите Scriptable и добавьте виджет.</li>
+    <li>В настройках виджета выберите скрипт «Расписание 307» и в поле Parameter укажите группу: <b>А</b> или <b>Б</b>.</li>
+  </ol>
+
+  <div class="card">
+    Малый виджет показывает текущую или следующую пару, средний — ещё и одна–две следующие. Данные обновляются при показе, при отсутствии интернета используется сохранённая копия расписания.
+  </div>
+</div>
+<script>
+try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=__s.theme||(__d?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}
+var __m=document.getElementById("metaTheme");if(__m)__m.content=document.documentElement.dataset.theme==="dark"?"#000000":"#ffffff";
+</script>
+</body>
+</html>

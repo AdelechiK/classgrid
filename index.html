@@ -30,15 +30,18 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
   </div>
 
   <div class="panel">
-    <div class="controls">
-      <span class="lab" id="groupLab">Группа</span>
+    <div class="headrow">
+      <button class="weekpill" id="weekPill" type="button" aria-expanded="false" aria-controls="weekRow">
+        <span id="weekPillText"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <div class="seg groupseg" id="groupSeg" role="group" aria-label="Учебная группа">
         <button type="button" data-group="А" aria-pressed="true" aria-label="Группа А">А</button>
         <button type="button" data-group="Б" aria-pressed="false" aria-label="Группа Б">Б</button>
       </div>
     </div>
 
-    <div class="weekrow">
+    <div class="weekrow" id="weekRow" hidden>
       <button class="wk-step" id="weekPrev" type="button" aria-label="Предыдущая неделя">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
       </button>
@@ -66,6 +69,11 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
   <p class="legend">«Окно» — свободный промежуток между занятиями в течение дня</p>
   <p class="ftr-row">
     <button class="linkbtn" id="resetBanner" type="button">Показывать подсказку «На главный экран»</button>
+  </p>
+  <p class="ftr-row ftr-meta">
+    <span id="dataVersion" hidden></span>
+    <a href="widget.html" class="flink">Виджет</a>
+    <button class="linkbtn" id="icsBtn" type="button">Экспорт в календарь</button>
   </p>
 </footer>
 
