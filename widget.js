@@ -15,6 +15,7 @@ const MONTHS = ["января", "февраля", "марта", "апреля", 
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
 /* ---------- загрузка данных ---------- */
+let fetchError = "";   // причина последнего сбоя — показываем в заглушке
 function fetchSchedule() {
   const fm = FileManager.local();
   const path = fm.joinPath(fm.documentsDirectory(), WIDGET_CACHE);
@@ -32,7 +33,8 @@ function fetchSchedule() {
       fm.writeString(path, raw);
       return data;
     }
-  } catch (e) { /* сеть недоступна — читаем кэш */ }
+    fetchError = "ответ без расписания";
+  } catch (e) { fetchError = String(e).slice(0, 80); }
   if (fm.fileExists(path)) {
     try { return JSON.parse(fm.readString(path)); } catch (e) { return null; }
   }
@@ -272,8 +274,8 @@ const data = fetchSchedule();
 if (!data || !data.times || !data.groups) {
   const err = new ListWidget();
   err.addText("Расписание 307");
-  err.addText("Нет данных: включите интернет и откройте Scriptable — расписание сохранится для офлайна");
-  err.addText("Сайт: adelechik.github.io/classgrid");
+  err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
+  err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
   Script.setWidget(err);
   Script.complete();
 } else {
