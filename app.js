@@ -29,12 +29,12 @@ function readState() {
 }
 var saved = readState();
 if (!saved || typeof saved.week !== "number" || saved.week < 1 || saved.week > 17 ||
-  typeof saved.day !== "number" || saved.day < 0 || saved.day > 5) saved = null;
+  typeof saved.day !== "number" || saved.day < 0 || saved.day > 6) saved = null;
 var state = {
   group: (saved && saved.group === "Б") ? "Б" : "А",
   week: clamp(saved && saved.week, 1, MAX_WEEK),
   view: (saved && saved.view === "week") ? "week" : "day",
-  day: clamp(saved && saved.day, 0, 5),
+  day: clamp(saved && saved.day, 0, 6),
   theme: (saved && saved.theme) || document.documentElement.dataset.theme || "light",
   bannerPermanent: !!(saved && saved.bannerPermanent)
 };
@@ -55,12 +55,11 @@ function todayInfo() {
   var now = startOfDay(new Date());
   var diff = Math.floor(Math.round((now - SEMESTER_START) / 864e5) / 7);   // 7 суток, устойчиво к переводу часов
   var rawWeek = diff + 1;
-  var dow = (now.getDay() + 6) % 7;                          // 0 = Пн, 6 = Вс
-  var dayIdx = dow === 6 ? 0 : dow;                          // воскресенье -> понедельник
+  var dow = (now.getDay() + 6) % 7;                          // 0 = Пн … 6 = Вс
   return {
     rawWeek: rawWeek,
     week: clamp(rawWeek, 1, MAX_WEEK) || 1,
-    day: dayIdx,
+    day: dow,                                                // воскресенье — собственный день (пустой), как в виджете
     inSemester: rawWeek >= 1 && rawWeek <= 17
   };
 }
@@ -81,6 +80,7 @@ var INDEX = {};   // INDEX[group][dayIdx][timeIdx] = [items]
 });
 
 function itemsFor(group, dayIdx, timeIdx, week) {
+  if (!INDEX[group][dayIdx]) return [];   // вс (индекс 6) в данных пар не имеет
   return (INDEX[group][dayIdx][timeIdx] || []).filter(function (it) {
     return it.weeks && it.weeks.indexOf(week) >= 0;
   });
@@ -146,7 +146,8 @@ function daySectionHTML(group, di, week) {
   } else {
     rows = '<div class="dayempty">В этот день занятий нет</div>';
   }
-  return '<section class="day"><h2>' + DAYS[di] + ", " + dayDate(week, di) +
+  var name = di === 6 ? "Воскресенье" : DAYS[di];
+  return '<section class="day"><h2>' + name + ", " + dayDate(week, di) +
     '<span class="h2w">нед. ' + week + " (" + parityOf(week) + ")</span></h2>" + rows + "</section>";
 }
 
@@ -420,6 +421,26 @@ function render() {
     });
     tabs.appendChild(b);
   });
+  /* Воскресенье в данных пар не имеет: вкладку показываем, только когда
+     она осмысленна — сегодня вс или пользователь смотрит вс. */
+  if (state.day === 6 || TODAY.day === 6) {
+    var sunToday = TODAY.day === 6 && TODAY.inSemester && state.week === TODAY.week;
+    var b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(state.day === 6 && state.view === "day"));
+    b.innerHTML = '<span class="dname">Вс</span>' +
+      '<span class="ddate">' + dayDate(state.week, 6) + "</span>";
+    b.setAttribute("aria-label", "воскресенье, " + dayDate(state.week, 6));
+    if (sunToday) b.classList.add("istoday");
+    b.title = "воскресенье, неделя " + state.week + (sunToday ? ", сегодня" : "");
+    b.addEventListener("click", function () {
+      state.day = 6;
+      if (state.view !== "day") state.view = "day";
+      save(); render();
+    });
+    tabs.appendChild(b);
+  }
   var wb = document.createElement("button");
   wb.type = "button";
   wb.className = "allweek";
@@ -453,13 +474,8 @@ function render() {
   el("emptyMsg").hidden = true;
   var c = el("content");
   if (state.view === "day") {
-    var hasAny = TIMES.some(function (_, ti) { return itemsFor(state.group, state.day, ti, state.week).length; });
-    if (hasAny) {
-      c.innerHTML = daySectionHTML(state.group, state.day, state.week);
-    } else {
-      c.innerHTML = "";
-      el("emptyMsg").hidden = false;
-    }
+    /* пустой день тоже рисуется секцией: заголовок с датой + «В этот день занятий нет» */
+    c.innerHTML = daySectionHTML(state.group, state.day, state.week);
   } else {
     c.innerHTML = weekHTML(state.group, state.week);
   }
@@ -665,9 +681,12 @@ el("icsBtn").addEventListener("click", downloadICS);
     var dx = t.clientX - sx, dy = t.clientY - sy;
     if (Math.abs(dx) < 60 || Math.abs(dy) >= Math.abs(dx)) return;
     var dir = dx < 0 ? 1 : -1;   // влево — следующий день
+    /* Блок недели идёт вт..пн: хронология …Сб -> Вс -> Пн (той же недели) -> Вт (следующего блока). */
     var nd = state.day + dir, nw = state.week;
-    if (nd > 5) { if (nw >= MAX_WEEK) return; nd = 0; nw++; }
-    if (nd < 0) { if (nw <= 1) return; nd = 5; nw--; }
+    if (nd > 6) { nd = 0; }
+    else if (nd < 0) { nd = 6; }
+    else if (dir > 0 && state.day === 0) { if (nw >= MAX_WEEK) return; nw++; }
+    else if (dir < 0 && state.day === 1) { if (nw <= 1) return; nw--; }
     state.day = nd;
     state.week = nw;
     save(); render();
@@ -759,7 +778,7 @@ try {
   var qg = qs.get("group"); if (qg === "А" || qg === "Б") { state.group = qg; touched = true; }
   var qw = parseInt(qs.get("week"), 10); if (qw >= 1 && qw <= MAX_WEEK) { state.week = qw; touched = true; }
   var qv = qs.get("view"); if (qv === "day" || qv === "week") { state.view = qv; touched = true; }
-  var qd = parseInt(qs.get("day"), 10); if (qd >= 0 && qd <= 5) { state.day = qd; touched = true; }
+  var qd = parseInt(qs.get("day"), 10); if (qd >= 0 && qd <= 6) { state.day = qd; touched = true; }
   var qt = qs.get("theme"); if (qt === "light" || qt === "dark") {
     state.theme = qt;
     document.documentElement.dataset.theme = qt;
