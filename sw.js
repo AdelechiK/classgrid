@@ -1,7 +1,7 @@
 /* Расписание 307 — service worker: network-first, офлайн-фолбэк из кэша. */
 "use strict";
 
-var CACHE = "schedule307-v22";
+var CACHE = "schedule307-v23";
 var ASSETS = [
   "./",
   "./index.html",
@@ -11,7 +11,9 @@ var ASSETS = [
   "./data.js",
   "./widget.js",
   "./manifest.webmanifest",
-  "./icon.svg"
+  "./icon.svg",
+  "./apple-touch-icon.png",
+  "./icon-maskable.svg"
 ];
 
 self.addEventListener("install", function (e) {

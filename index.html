@@ -8,6 +8,7 @@
 <title>Расписание 307</title>
 <meta name="description" content="Расписание занятий групп А и Б: выберите группу и неделю — сайт покажет, какие пары идут на этой неделе.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="style.css">
 <script>
@@ -56,7 +57,7 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
 
   <button class="backtoday" id="backToday" type="button" hidden>
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
-    <span>Вернуться к сегодня</span>
+    <span>Вернуться к сегодняшнему дню</span>
   </button>
 </header>
 <main id="main">
@@ -68,7 +69,7 @@ try{var __s=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=win
   <p class="legend"><b>Смежная</b> — пара проводится совместно с другой группой</p>
   <p class="legend">«Окно» — свободный промежуток между занятиями в течение дня</p>
   <p class="ftr-row">
-    <button class="linkbtn" id="resetBanner" type="button">Показывать подсказку «На главный экран»</button>
+    <button class="linkbtn" id="resetBanner" type="button">Показывать подсказку «Добавить на главный экран»</button>
   </p>
   <p class="ftr-row ftr-meta">
     <span id="dataVersion" hidden></span>

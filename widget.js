@@ -7,9 +7,9 @@
    Поминутный формат без живого таймера: весь текст статичный и считается
    при прогоне, поэтому счёт вверх после нуля (документированное поведение
    системного timer-стиля) в принципе невозможен. Прогоны — только по
-   событиям: в дальних диапазонах раз в 2–3 часа, в последний час —
-   лестница 30/20/5/3 минуты; бюджет обновлений iOS 40–70 в день
-   расходуется бережно.
+   событиям: в дальней зоне раз в 2–3 часа с заходом на отметку 90 минут,
+   в последние 90 минут — лестница 30/20/5/3, последний шаг точно на
+   границу события; бюджет обновлений iOS 40–70 в день расходуется бережно.
    Значок обновления (medium) перезапускает этот же скрипт через
    scriptable:///run?refresh=1&group=… — Scriptable заново тянет данные
    и пересобирает виджет, бюджет WidgetKit не расходуется. В small у
@@ -25,8 +25,6 @@ const WIDGET_CACHE = "schedule307-data.json";
 
 const DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
 const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
-  "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 const MONTHS_SHORT = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
   "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
 
@@ -34,7 +32,6 @@ const MONTHS_SHORT = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН"
 const C_TEXT = Color.dynamic(new Color("#000000"), new Color("#ffffff"));
 const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
 const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
-const C_ACCENT = Color.dynamic(new Color("#007aff"), new Color("#0a84ff"));
 
 /* Короткие имена пар в духе Транзита: корень дисциплины без канцелярита,
    уникальные пары — короткое чистое имя, повторяющиеся — с различителем
@@ -51,6 +48,7 @@ const SHORT_NAMES = {
   "Практический курс английского языка": "Англ. яз. (практ.)",
   "Практический курс второго иностранного языка": "2 иностр. (практ.)",
   "Синтаксис второго иностранного языка": "Синтаксис",
+  "Стилистика английского языка": "Стилистика",
   "Финансово-экономический практикум": "Фин.-экон. практикум",
   "Чтение художественного текста на английском языке": "Чтение (англ. яз.)"
 };
@@ -74,7 +72,9 @@ async function fetchSchedule() {
       if (s >= 0 && e > s) { raw = line.slice(s, e + 1); break; }
     }
     if (raw) data = JSON.parse(raw);
-    if (data) {
+    /* Кэш перезаписываем только валидной схемой: битый ответ сайта не должен
+       затирать рабочую офлайн-копию. */
+    if (data && data.times && data.groups) {
       fm.writeString(path, raw);
       console.log("Сеть: данные получены, кэш записан");
       return data;
@@ -108,8 +108,8 @@ function parseTimes(times) {
   });
 }
 
-function todayIndex() {
-  const n = new Date();
+function todayIndex(d) {
+  const n = d || new Date();
   return (n.getDay() + 6) % 7;   // 0 = Пн … 6 = Вс
 }
 
@@ -199,6 +199,13 @@ function minWord(n) {
   return "минут";
 }
 
+/* После предлога «через» — винительный падеж: «через 21 минуту»;
+   формы «минуты» и «минут» в обоих падежах совпадают. */
+function minWordAcc(n) {
+  const w = minWord(n);
+  return w === "минута" ? "минуту" : w;
+}
+
 /* ---------- состояние «сейчас / скоро / свободно» ---------- */
 /* kind: now — пара идёт; next — до начала есть время; idle — сегодня пар нет. */
 function liveState(data, timesMin, group) {
@@ -207,10 +214,10 @@ function liveState(data, timesMin, group) {
 
 function liveStateAt(data, timesMin, group, now) {
   const nm = now.getHours() * 60 + now.getMinutes();
-  const dow = todayIndex();
+  const dow = todayIndex(now);
   const week = weekOf(now);
   const nextInfo = nextLesson(data, timesMin, group, now);
-  if (!nextInfo) return { kind: "idle", title: "Каникулы", meta: "" };
+  if (!nextInfo) return { kind: "idle", title: "Каникулы" };
 
   const inWeek = dow <= 5 && week >= 1 && week <= MAX_WEEK;
   const ls = inWeek ? lessonsOfDay(data, timesMin, group, dow, week) : [];
@@ -239,11 +246,9 @@ function liveStateAt(data, timesMin, group, now) {
     };
   }
 
-  const when = DAY_SHORT[nextInfo.dayIdx] + ", " + nextInfo.date.getDate() + " " +
-    MONTHS[nextInfo.date.getMonth()] + ", " + hhmm(nextInfo.first.start);
   const nextAt = new Date(nextInfo.date.getFullYear(), nextInfo.date.getMonth(),
     nextInfo.date.getDate(), 0, nextInfo.first.start);
-  return { kind: "idle", title: "Сегодня пар нет", meta: "Далее: " + when,
+  return { kind: "idle", title: "Сегодня пар нет",
     nextAt: nextAt, dayLessons: nextInfo.lessons, now: new Date(now.getTime()) };
 }
 
@@ -309,7 +314,6 @@ function addHeader(w, group, isSmall) {
     ic.url = "scriptable:///run/" + encodeURIComponent(Script.name()) +
       "?refresh=1&group=" + encodeURIComponent(group);
   }
-  return h;
 }
 
 function addLessonRow(list, l) {
@@ -373,7 +377,7 @@ function addSidePanel(right, st, now, far) {
     }
     const d = st.nextAt;
     const hdr = right.addText(DAY_SHORT[(d.getDay() + 6) % 7].toUpperCase() + ", " +
-      d.getDate() + " " + MONTHS[d.getMonth()].toUpperCase());
+      d.getDate() + " " + MONTHS_SHORT[d.getMonth()]);
     hdr.font = Font.semiboldSystemFont(10);
     hdr.textColor = C_SUB;
     hdr.lineLimit = 1;
@@ -400,7 +404,7 @@ function addSidePanel(right, st, now, far) {
   aud.textColor = C_SUB;
   aud.lineLimit = 1;
   const until = Math.max(1, nxt.start - nm);
-  const when = right.addText("через " + until + " " + minWord(until));
+  const when = right.addText("через " + until + " " + minWordAcc(until));
   when.font = Font.regularSystemFont(12);
   when.textColor = C_SUB;
   when.lineLimit = 1;
@@ -498,9 +502,10 @@ async function createWidget(data, timesMin, group) {
 
 /* ---------- план прогонов: событийно, бережно к бюджету 40–70/день ---------- */
 /* Лестница сгущается у границы: дальше 30 минут — шаг 30, дальше 15 — шаг 20,
-   дальше 6 — шаг 5, потом шаг 3. В дальней зоне шаг 3 часа с заходом на
-   отметку 90 минут, где герой переключается со времени на минуты.
-   Ночных прогонов нет — до полуночи или до ближайшей границы. */
+   дальше 6 — шаг 5, потом шаг 3; шаг не перелетает границу события —
+   прогон попадает точно на начало или конец пары. В дальней зоне шаг 3 часа
+   с заходом на отметку 90 минут, где герой переключается со времени на
+   минуты. Ночных прогонов нет — до полуночи или до ближайшей границы. */
 function nextRefreshDate(st, now) {
   if (st.kind === "idle") {
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 30);
@@ -522,7 +527,7 @@ function nextRefreshDate(st, now) {
   else if (rem > 15) step = 20;
   else if (rem > 6) step = 5;
   else step = 3;
-  return new Date(now.getTime() + step * 60000);
+  return new Date(now.getTime() + Math.min(step, rem) * 60000);
 }
 
 /* ---------- запуск ---------- */
@@ -545,25 +550,26 @@ if (!data || !data.times || !data.groups) {
   const err = new ListWidget();
   err.url = SITE_URL;
   err.addText("Расписание 307");
-  err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
-  err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
+  err.addText("Нет данных — нет сети и кэша");
+  err.addText("Откройте Scriptable при наличии интернета — расписание сохранится для офлайна");
   err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
   if (!inWidget) await err.presentSmall();
   Script.setWidget(err);
   Script.complete();
 } else {
   let widget = null;
+  let renderError = "";
   try {
     widget = await createWidget(data, parseTimes(data.times), group);
   } catch (e) {
-    fetchError = fetchError || "сбой отрисовки: " + String(e).slice(0, 60);
-    console.error("Итог: " + fetchError);
+    renderError = "сбой отрисовки: " + String(e).slice(0, 60);
+    console.error("Итог: " + renderError);
   }
   if (!widget) {
     const err = new ListWidget();
     err.url = SITE_URL;
     err.addText("Расписание 307");
-    err.addText("Ошибка показа: " + fetchError);
+    err.addText("Ошибка показа: " + renderError);
     err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
     if (!inWidget) await err.presentSmall();
     Script.setWidget(err);

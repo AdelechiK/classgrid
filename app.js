@@ -2,6 +2,17 @@
 "use strict";
 
 var DATA = window.SCHEDULE_DATA;
+if (!DATA || !DATA.days || !DATA.times || !DATA.groups) {
+  /* data.js не загрузился (офлайн-первый запуск, сбой CDN): заглушка и
+     тихий выход, иначе скрипт падает на undefined и страница пуста. */
+  var bootFail = function () {
+    var c = document.getElementById("content");
+    if (c) c.innerHTML = '<p class="empty">Не удалось загрузить расписание. Обновите страницу.</p>';
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootFail);
+  else bootFail();
+  throw new Error("SCHEDULE_DATA не загрузился");
+}
 var DAYS = DATA.days;               // 6 полных названий, Пн..Сб
 var TIMES = DATA.times;             // 7 слотов
 var DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -160,7 +171,7 @@ function weekHTML(group, week) {
   var html = '<div class="table wk-grid">';
   html += '<div class="time"></div>';
   DAYS.forEach(function (n, di) {
-    html += '<div class="wk-day' + (di === TODAY.day && TODAY.inSemester ? " is-today" : "") +
+    html += '<div class="wk-day' + (di === TODAY.day && TODAY.inSemester && week === TODAY.week ? " is-today" : "") +
       '"><div class="dayh">' + n + "</div></div>";
   });
   TIMES.forEach(function (t, ti) {
@@ -316,6 +327,10 @@ function viewingActualToday() {
     state.week === TODAY.week && state.day === TODAY.day;
 }
 function updateLive() {
+  /* Вкладка может пережить полночь: интервал в 30 секунд сверяет дату,
+     иначе «Сегодня» и статусы слотов останутся вчерашними. */
+  var t = todayInfo();
+  if (t.rawWeek !== TODAY.rawWeek || t.day !== TODAY.day) { refreshToday(); return; }
   var c = el("content");
   if (!c || !viewingActualToday()) return;
   var sec = c.querySelector("section.day");
@@ -395,8 +410,9 @@ function render() {
       '<span class="ddate">' + dayDate(state.week, di) + "</span>";
     b.setAttribute("aria-label", n + ", " + dayDate(state.week, di));
     b.setAttribute("aria-selected", String(di === state.day && state.view === "day"));
+    if (di === TODAY.day && TODAY.inSemester && state.week === TODAY.week) b.classList.add("istoday");
     b.title = n + ", неделя " + state.week +
-      (di === TODAY.day && TODAY.inSemester ? ", сегодня" : "");
+      (di === TODAY.day && TODAY.inSemester && state.week === TODAY.week ? ", сегодня" : "");
     b.addEventListener("click", function () {
       state.day = di;
       if (state.view !== "day") state.view = "day";
@@ -418,8 +434,10 @@ function render() {
   });
   tabs.appendChild(wb);
 
-  var showBack = (state.view === "day" && (state.day !== TODAY.day || state.week !== TODAY.week)) ||
-    (state.view === "week" && state.week !== TODAY.week);
+  /* Вне семестра «сегодня» не существует — кнопку не показываем. */
+  var showBack = TODAY.inSemester &&
+    ((state.view === "day" && (state.day !== TODAY.day || state.week !== TODAY.week)) ||
+    (state.view === "week" && state.week !== TODAY.week));
   el("backToday").hidden = !showBack;
 
   var badge = el("todayBadge");
@@ -702,7 +720,7 @@ function showBanner() {
   } else if (isIOS()) {
     text = "В Safari нажмите «Поделиться» и выберите «На экран “Домой”»";
   } else {
-    text = "Добавьте в закладки: ⌘D (Mac) или Ctrl+D (Windows)";
+    text = "Добавьте в закладки: Cmd+D (Mac) или Ctrl+D (Windows)";
   }
   el("bannerText").textContent = text;
   el("banner").hidden = false;
@@ -732,20 +750,22 @@ if (FIRST_OPEN) {
   state.view = "day";
   save();
 }
-/* GET-параметры (поделиться ссылкой / QA): group, week, view, day, theme */
+/* GET-параметры (поделиться ссылкой / QA): group, week, view, day, theme.
+   Сохраняем только если распознали хотя бы один — чужая query-строка
+   (utm и т.п.) не должна перезаписывать выбор пользователя. */
 try {
   var qs = new URLSearchParams(location.search);
-  if (qs.toString()) {
-    var qg = qs.get("group"); if (qg === "А" || qg === "Б") state.group = qg;
-    var qw = parseInt(qs.get("week"), 10); if (qw >= 1 && qw <= MAX_WEEK) state.week = qw;
-    var qv = qs.get("view"); if (qv === "day" || qv === "week") state.view = qv;
-    var qd = parseInt(qs.get("day"), 10); if (qd >= 0 && qd <= 5) state.day = qd;
-    var qt = qs.get("theme"); if (qt === "light" || qt === "dark") {
-      state.theme = qt;
-      document.documentElement.dataset.theme = qt;
-    }
-    save();
+  var touched = false;
+  var qg = qs.get("group"); if (qg === "А" || qg === "Б") { state.group = qg; touched = true; }
+  var qw = parseInt(qs.get("week"), 10); if (qw >= 1 && qw <= MAX_WEEK) { state.week = qw; touched = true; }
+  var qv = qs.get("view"); if (qv === "day" || qv === "week") { state.view = qv; touched = true; }
+  var qd = parseInt(qs.get("day"), 10); if (qd >= 0 && qd <= 5) { state.day = qd; touched = true; }
+  var qt = qs.get("theme"); if (qt === "light" || qt === "dark") {
+    state.theme = qt;
+    document.documentElement.dataset.theme = qt;
+    touched = true;
   }
+  if (touched) save();
 } catch (e) {}
 syncThemeMeta();
 render();
