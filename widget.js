@@ -1,11 +1,19 @@
 /* Виджет «Расписание 307» для Scriptable (iOS).
+   Транзит-минимализм: капс-метка состояния, крупный герой (минуты или
+   абсолютное время), подпись «МИНУТ ДО 13:40», полоса прогресса во всю
+   ширину. Цвет цифр и полосы — светофор оставшегося времени: зелёный
+   от 20 минут, жёлтый 6–19, красный 5 и меньше. Когда пар нет — только
+   текст: метка состояния и строка «когда следующая пара».
    Поминутный формат без живого таймера: весь текст статичный и считается
    при прогоне, поэтому счёт вверх после нуля (документированное поведение
-   системного timer-стиля) в принципе невозможен. Герой — «N минут» до
-   конца/начала пары; в дальних диапазонах — абсолютное время «12:10»,
-   которое не устаревает между прогонами. Прогоны — только по событиям:
-   в дальних диапазонах раз в 2–3 часа, в последний час — лестница 30/20/5/3
-   минуты; бюджет обновлений iOS 40–70 в день расходуется бережно.
+   системного timer-стиля) в принципе невозможен. Прогоны — только по
+   событиям: в дальних диапазонах раз в 2–3 часа, в последний час —
+   лестница 30/20/5/3 минуты; бюджет обновлений iOS 40–70 в день
+   расходуется бережно.
+   Значок обновления (medium) перезапускает этот же скрипт через
+   scriptable:///run?refresh=1&group=… — Scriptable заново тянет данные
+   и пересобирает виджет, бюджет WidgetKit не расходуется. В small у
+   элементов нет собственных ссылок (одна tap-зона), значок не показывается.
    Данные: https://adelechik.github.io/classgrid/data.js, кэш в FileManager.local().
    Параметр виджета: «А» или «Б». Тап по виджету открывает сайт. */
 
@@ -19,6 +27,8 @@ const DAYS = ["Понедельник", "Вторник", "Среда", "Чет�
 const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+const MONTHS_SHORT = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
+  "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
 
 /* Цвета по докам Scriptable: Color.dynamic(light, dark) и new Color("#hex"). */
 const C_TEXT = Color.dynamic(new Color("#000000"), new Color("#ffffff"));
@@ -26,18 +36,21 @@ const C_SUB = Color.dynamic(new Color("#6e6e73"), new Color("#98989f"));
 const C_BG = Color.dynamic(new Color("#ffffff"), new Color("#1c1c1e"));
 const C_ACCENT = Color.dynamic(new Color("#007aff"), new Color("#0a84ff"));
 
-/* Короткие имена пар для компактного показа; неизвестные показываем как есть. */
+/* Короткие имена пар в духе Транзита: корень дисциплины без канцелярита,
+   уникальные пары — короткое чистое имя, повторяющиеся — с различителем
+   в скобках, чтобы без труда ассоциировались с полным названием.
+   Неизвестные показываем как есть. */
 const SHORT_NAMES = {
-  "Аудирование текстов (второй иностранный язык)": "Аудирование (2-й иностр.)",
+  "Аудирование текстов (второй иностранный язык)": "Аудирование",
   "К/В Культура иноязычного общения (на английском языке)": "Культура общения",
   "К/В Практикум по межкультурному общению (на английском языке)": "Межкульт. практикум",
   "К/В Современная письменная коммуникация на английском языке": "Письм. коммуникация",
-  "Методика обучения и воспитания в области второго иностранного языка": "Методика (2-й иностр.)",
+  "Методика обучения и воспитания в области второго иностранного языка": "Методика (2 иностр.)",
   "Методика обучения и воспитания в области первого иностранного (английского) языка": "Методика (англ. яз.)",
   "Практика по профилю подготовки (в области иностранных языков)": "Практика",
   "Практический курс английского языка": "Англ. яз. (практ.)",
-  "Практический курс второго иностранного языка": "2-й иностр. (практ.)",
-  "Синтаксис второго иностранного языка": "Синтаксис (2-й иностр.)",
+  "Практический курс второго иностранного языка": "2 иностр. (практ.)",
+  "Синтаксис второго иностранного языка": "Синтаксис",
   "Финансово-экономический практикум": "Фин.-экон. практикум",
   "Чтение художественного текста на английском языке": "Чтение (англ. яз.)"
 };
@@ -234,16 +247,26 @@ function liveStateAt(data, timesMin, group, now) {
     nextAt: nextAt, dayLessons: nextInfo.lessons, now: new Date(now.getTime()) };
 }
 
+/* ---------- светофор оставшегося времени ---------- */
+/* Зелёный — спокойный запас (от 20 минут), жёлтый — пора собираться (6–19),
+   красный — пять минут и меньше. Тот же цвет получают цифры-герой и полоса. */
+function trafficColor(min) {
+  const dark = Device.isUsingDarkAppearance();
+  if (min <= 5) return new Color(dark ? "#ff453a" : "#ff3b30");
+  if (min < 20) return new Color(dark ? "#ff9f0a" : "#ff9500");
+  return new Color(dark ? "#30d158" : "#34c759");
+}
+
 /* ---------- полоса прогресса (DrawContext, без живых элементов) ---------- */
 /* Статичный снимок доли прошедшего времени: обновляется только при прогоне,
    между прогонами честно замирает. Рисуем в 3x для чёткости на Retina.
    Внутри канвы dynamic-цвета запрещены — выбираем по оформлению устройства. */
-function barImage(frac, widthPt) {
+function barImage(frac, widthPt, min) {
   const S = 3;
   const W = Math.round(widthPt * S), H = 4 * S;
   const dark = Device.isUsingDarkAppearance();
   const trackC = new Color(dark ? "#38383a" : "#e5e5ea");
-  const accC = new Color(dark ? "#0a84ff" : "#007aff");
+  const accC = trafficColor(min);
   const dc = new DrawContext();
   dc.size = new Size(W, H);
   dc.opaque = false;
@@ -264,11 +287,28 @@ function addHeader(w, group, isSmall) {
   const t1 = h.addText(isSmall ? "Расписание 307" : "Расписание 307, " + group);
   t1.font = Font.semiboldSystemFont(10);
   t1.textColor = C_SUB;
+  t1.lineLimit = 1;
+  t1.minimumScaleFactor = 0.8;
   h.addSpacer();
   const week = weekOf(new Date());
   const t2 = h.addText(week >= 1 && week <= MAX_WEEK ? "Нед. " + week : "");
   t2.font = Font.regularSystemFont(10);
   t2.textColor = C_SUB;
+  t2.lineLimit = 1;
+  if (!isSmall) {
+    /* Значок обновления: тап перезапускает сам скрипт через URL-схему.
+       Scriptable заново тянет данные и Script.setWidget пересобирает
+       виджет — бюджет WidgetKit не расходуется. В small элементные
+       ссылки не поддерживаются, поэтому значок только в medium. */
+    h.addSpacer(5);
+    const sym = SFSymbol.named("arrow.clockwise");
+    sym.applyFont(Font.mediumSystemFont(11));
+    const ic = h.addImage(sym.image);
+    ic.tintColor = C_SUB;
+    ic.imageSize = new Size(11, 11);
+    ic.url = "scriptable:///run/" + encodeURIComponent(Script.name()) +
+      "?refresh=1&group=" + encodeURIComponent(group);
+  }
   return h;
 }
 
@@ -298,17 +338,79 @@ function addLessonRow(list, l) {
   return row;
 }
 
-/* Заголовок состояния — первая строка, серым. */
-function stateTitle(st) {
-  if (st.kind === "idle") return st.title;   // «Сегодня пар нет» / «Каникулы»
-  if (st.kind === "now") return "Сейчас";
-  return st.inBreak ? "Перерыв" : "До пары";
+/* Метка состояния капсом — первая строка, серым. */
+function stateLabel(st) {
+  if (st.kind === "now") return "ИДЁТ ПАРА";
+  if (st.kind === "next") return st.inBreak ? "ПЕРЕРЫВ" : "ДО ПАРЫ";
+  return st.title === "Каникулы" ? "КАНИКУЛЫ" : "ПАР НЕТ";
+}
+
+/* Подпись под героем: сколько и до какой минуты. */
+function heroCaption(st, far) {
+  if (far) return "НАЧАЛО ПАРЫ";
+  const min = st.kind === "now" ? st.leftMin : st.waitMin;
+  const t = st.kind === "now" ? st.lesson.end : st.lesson.start;
+  return minWord(min).toUpperCase() + " ДО " + hhmm(t);
+}
+
+/* Строка «пар нет»: когда ближайшая пара. */
+function idleMeta(st) {
+  if (!st.nextAt) return "РАСПИСАНИЕ ЗАКОНЧИЛОСЬ";
+  const d = st.nextAt;
+  return "ДАЛЕЕ: " + DAY_SHORT[(d.getDay() + 6) % 7] + ", " + d.getDate() + " " +
+    MONTHS_SHORT[d.getMonth()] + ", " + hhmm(d.getHours() * 60 + d.getMinutes());
+}
+
+/* Правая колонка medium: следующая пара либо расписание ближайшего дня. */
+function addSidePanel(right, st, now, far) {
+  if (st.kind === "idle") {
+    if (!st.nextAt || !st.dayLessons || !st.dayLessons.length) {
+      const none = right.addText("ДАЛЬШЕ ПАР НЕТ");
+      none.font = Font.semiboldSystemFont(10);
+      none.textColor = C_SUB;
+      none.lineLimit = 1;
+      return;
+    }
+    const d = st.nextAt;
+    const hdr = right.addText(DAY_SHORT[(d.getDay() + 6) % 7].toUpperCase() + ", " +
+      d.getDate() + " " + MONTHS[d.getMonth()].toUpperCase());
+    hdr.font = Font.semiboldSystemFont(10);
+    hdr.textColor = C_SUB;
+    hdr.lineLimit = 1;
+    for (const l of st.dayLessons.slice(0, 3)) addLessonRow(right, l);
+    return;
+  }
+  const nm = now.getHours() * 60 + now.getMinutes();
+  const nxt = st.kind === "next" ? st.lesson : (st.later || [])[0];
+  /* В дальней зоне герой уже показывает время начала — в заголовке
+     колонки оно задвоилось бы. */
+  const head = right.addText(nxt ? ("ДАЛЕЕ" + (far ? "" : ", " + hhmm(nxt.start))) : "ДАЛЬШЕ ПАР НЕТ");
+  head.font = Font.semiboldSystemFont(10);
+  head.textColor = C_SUB;
+  head.lineLimit = 1;
+  if (!nxt) return;
+  const name = right.addText(shortName(nxt.name));
+  name.font = Font.semiboldSystemFont(14);
+  name.textColor = C_TEXT;
+  name.lineLimit = 2;
+  name.minimumScaleFactor = 0.8;
+  right.addSpacer(2);
+  const aud = right.addText(nxt.aud ? "ауд. " + nxt.aud : "");
+  aud.font = Font.regularSystemFont(12);
+  aud.textColor = C_SUB;
+  aud.lineLimit = 1;
+  const until = Math.max(1, nxt.start - nm);
+  const when = right.addText("через " + until + " " + minWord(until));
+  when.font = Font.regularSystemFont(12);
+  when.textColor = C_SUB;
+  when.lineLimit = 1;
+  when.minimumScaleFactor = 0.8;
 }
 
 async function createWidget(data, timesMin, group) {
   const st = liveState(data, timesMin, group);
   const w = new ListWidget();
-  w.setPadding(12, 15, 12, 15);   // по вертикали теснее: двухстрочное имя + герой + полоса должны влезать в 158pt
+  w.setPadding(12, 15, 12, 15);   // по вертикали теснее: метка, имя, герой, подпись и полоса должны влезать в 134pt
   w.backgroundColor = C_BG;
   w.url = SITE_URL;   // тап по виджету открывает сайт в браузере по умолчанию
   const now = st.now || new Date();
@@ -317,114 +419,75 @@ async function createWidget(data, timesMin, group) {
   addHeader(w, group, !isMed);
   w.addSpacer(4);
 
-  /* medium: слева состояние и герой, справа — последующие пары дня. */
-  let left = w;
-  let rows = [];
-  if (st.kind === "now" || st.kind === "next") rows = (st.later || []).slice(0, 3);
-  if (st.kind === "idle" && st.dayLessons) rows = st.dayLessons.slice(0, 3);
-  if (isMed && rows.length) {
-    const body = w.addStack();
-    body.layoutHorizontally();
-    left = body.addStack();
-    left.layoutVertically();
-    left.spacing = 3;
-    left.size = new Size(120, 0);
-    body.addSpacer(8);
-    const right = body.addStack();
-    right.layoutVertically();
-    right.spacing = 7;
-    right.addSpacer();
-    for (const l of rows) addLessonRow(right, l);
-    right.addSpacer();
-  }
-
   /* Дальняя зона — до пары больше 90 минут: герой показывает абсолютное
      время, которое не устаревает между редкими прогонами. */
   const far = st.kind === "next" && st.waitMin > 90;
 
-  const label = left.addText(stateTitle(st));
+  /* medium: слева состояние и герой, справа — «далее». */
+  let left = w;
+  if (isMed) {
+    const body = w.addStack();
+    body.layoutHorizontally();
+    left = body.addStack();
+    left.layoutVertically();
+    left.spacing = 2;
+    left.size = new Size(120, 0);
+    body.addSpacer(10);
+    const right = body.addStack();
+    right.layoutVertically();
+    right.spacing = 3;
+    right.addSpacer();
+    addSidePanel(right, st, now, far);
+    right.addSpacer();
+  }
+
+  const label = left.addText(stateLabel(st));
   label.font = Font.semiboldSystemFont(10);
   label.textColor = C_SUB;
   label.lineLimit = 1;
 
-  /* Герой: число в ближней зоне, абсолютное время в дальней. Слово
-     («минут до конца пары») вынесено в подпись, чтобы число дышало
-     даже в узкой колонке medium. Весь текст статичный и считается при
-     прогоне: между прогонами ничего не тикает, счёт вверх невозможен. */
-  let heroBig = "", heroSub = "";
-  if (st.kind === "now") {
-    heroBig = String(st.leftMin);
-    heroSub = minWord(st.leftMin) + " до конца пары";
-  } else if (st.kind === "next") {
-    if (far) { heroBig = hhmm(st.lesson.start); heroSub = "начало пары"; }
-    else { heroBig = String(st.waitMin); heroSub = minWord(st.waitMin) + " до начала пары"; }
-  } else if (st.kind === "idle" && st.nextAt) {
-    const nmin = st.nextAt.getHours() * 60 + st.nextAt.getMinutes();
-    heroBig = hhmm(nmin);
-    const d = st.nextAt;
-    heroSub = DAY_SHORT[(d.getDay() + 6) % 7] + ", " + d.getDate() + " " + MONTHS[d.getMonth()];
-  }
-
-  const bigFont = Font.semiboldRoundedSystemFont(26);
-  const subFont = Font.regularSystemFont(11);
-
-  if (far || st.kind === "idle") {
-    /* Дальняя зона и «пар нет»: сначала время, потом что за пара. */
-    const big = left.addText(heroBig);
-    big.font = bigFont;
-    big.textColor = C_TEXT;
-    big.lineLimit = 1;
-    big.minimumScaleFactor = 0.8;
-    const sub = left.addText(heroSub);
-    sub.font = subFont;
-    sub.textColor = C_SUB;
-    sub.lineLimit = 1;
-    sub.minimumScaleFactor = 0.85;
-    if (st.kind === "next") {
-      const name = left.addText(shortName(st.lesson.name));
-      name.font = Font.semiboldSystemFont(15);
-      name.textColor = C_TEXT;
-      name.lineLimit = 2;
-      name.minimumScaleFactor = 0.85;
-      const meta = left.addText(st.lesson.aud ? "ауд. " + st.lesson.aud : "сегодня");
-      meta.font = subFont;
+  if (st.kind === "idle") {
+    /* Только текст: строка «когда пара» по центру свободного места.
+       В medium она не нужна — расписание ближайшего дня в правой колонке. */
+    if (!isMed) {
+      left.addSpacer();
+      const meta = left.addText(idleMeta(st));
+      meta.font = Font.semiboldSystemFont(11);
       meta.textColor = C_SUB;
       meta.lineLimit = 1;
-      meta.minimumScaleFactor = 0.85;
+      meta.minimumScaleFactor = 0.7;
     }
-  } else if (st.kind === "next" || st.kind === "now") {
-    /* Ближняя зона: что за пара, герой — сколько минут. */
-    const name = left.addText(shortName(st.lesson.name));
-    name.font = Font.semiboldSystemFont(15);
-    name.textColor = C_TEXT;
-    name.lineLimit = 2;
-    name.minimumScaleFactor = 0.85;
-    const aud = st.lesson.aud ? ", ауд. " + st.lesson.aud : "";
-    const meta = left.addText((st.kind === "now" ? "до " : "в ") +
-      hhmm(st.kind === "now" ? st.lesson.end : st.lesson.start) + aud);
-    meta.font = subFont;
-    meta.textColor = C_SUB;
-    meta.lineLimit = 1;
-    meta.minimumScaleFactor = 0.85;
-    left.addSpacer();
-    const big = left.addText(heroBig);
-    big.font = bigFont;
-    big.textColor = C_TEXT;
+  } else {
+    /* Имя пары — узнаваемое сокращение в одну строку. В medium у «до пары»
+       и дальней зоны имя уже в правой колонке — дублировать не нужно. */
+    if (!isMed || st.kind === "now") {
+      const name = left.addText(shortName(st.lesson.name));
+      name.font = Font.semiboldSystemFont(13);
+      name.textColor = C_TEXT;
+      name.lineLimit = 1;
+      name.minimumScaleFactor = 0.6;
+      left.addSpacer(2);
+    }
+    const rem = st.kind === "now" ? st.leftMin : st.waitMin;
+    const big = left.addText(far ? hhmm(st.lesson.start) : String(rem));
+    big.font = Font.boldRoundedSystemFont(far ? 38 : 44);
+    big.textColor = trafficColor(far ? 999 : rem);
     big.lineLimit = 1;
-    big.minimumScaleFactor = 0.8;
-    const sub = left.addText(heroSub);
-    sub.font = subFont;
-    sub.textColor = C_SUB;
-    sub.lineLimit = 1;
-    sub.minimumScaleFactor = 0.85;
+    big.minimumScaleFactor = 0.6;
+    const cap = left.addText(heroCaption(st, far));
+    cap.font = Font.semiboldSystemFont(11);
+    cap.textColor = C_SUB;
+    cap.lineLimit = 1;
+    cap.minimumScaleFactor = 0.7;
   }
+  left.addSpacer();
 
-  /* Статичная полоса прогресса: обновляется при прогоне, между прогонами
-     честно замирает. */
+  /* Статичная полоса прогресса во всю ширину; цвет — светофор времени.
+     Обновляется при прогоне, между прогонами честно замирает. */
   if (st.frac != null) {
     const barW = isMed ? 308 : 128;
     w.addSpacer(4);
-    const bar = w.addImage(barImage(st.frac, barW));
+    const bar = w.addImage(barImage(st.frac, barW, st.kind === "now" ? st.leftMin : st.waitMin));
     bar.imageSize = new Size(barW, 4);
   }
 
@@ -463,10 +526,18 @@ function nextRefreshDate(st, now) {
 }
 
 /* ---------- запуск ---------- */
-let group = (args.widgetParameter || "А").trim().toUpperCase();
+/* Прогон бывает обычным (виджет или предпросмотр в Scriptable) и
+   перезапуском по значку обновления: тогда Scriptable сам открывает
+   скрипт с queryParameters, группу берём оттуда, чтобы виджет «Б»
+   обновился как «Б». При перезапуске предпросмотр не показываем —
+   иначе каждый тап по значку открывал бы весь экран Scriptable. */
+const qp = (typeof args !== "undefined" && args.queryParameters) || {};
+const fromRefresh = qp.refresh === "1";
+let group = String(qp.group || args.widgetParameter || "А").trim().toUpperCase();
 if (group !== "А" && group !== "Б" && group !== "A" && group !== "B") group = "А";
 if (group === "A") group = "А";
 if (group === "B") group = "Б";
+const inWidget = config.runsInWidget || fromRefresh;
 
 const data = await fetchSchedule();
 if (!data || !data.times || !data.groups) {
@@ -477,7 +548,7 @@ if (!data || !data.times || !data.groups) {
   err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
   err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
   err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
-  if (!config.runsInWidget) await err.presentSmall();
+  if (!inWidget) await err.presentSmall();
   Script.setWidget(err);
   Script.complete();
 } else {
@@ -494,9 +565,9 @@ if (!data || !data.times || !data.groups) {
     err.addText("Расписание 307");
     err.addText("Ошибка показа: " + fetchError);
     err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
-    if (!config.runsInWidget) await err.presentSmall();
+    if (!inWidget) await err.presentSmall();
     Script.setWidget(err);
-  } else if (config.runsInWidget) {
+  } else if (inWidget) {
     Script.setWidget(widget);
   } else {
     await widget.presentSmall();
