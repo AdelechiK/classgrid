@@ -24,7 +24,7 @@ const SITE_URL = "https://adelechik.github.io/classgrid/";
    календарной недели, содержащей 01.09.2026, то есть 31.08.2026.
    Формула в weekOf совпадает с app.js на сайте. */
 const SEMESTER_START = new Date(2026, 7, 31);  // понедельник недели 1, 2026-08-31
-const MAX_WEEK = 17;
+const MAX_WEEK = 18;
 const WIDGET_CACHE = "schedule307-data.json";
 
 const DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
@@ -185,6 +185,7 @@ function nextLesson(data, timesMin, group, afterDate) {
     if (raw < 1) continue;
     const di = (d.getDay() + 6) % 7;
     if (di > 5) continue;
+    if (raw === MAX_WEEK && di > 3) continue;   // неделя 18 обрывается чт 31.12
     const ls = lessonsOfDay(data, timesMin, group, di, raw);
     const rest = k === 0 ? ls.filter(l => l.end > nowMin) : ls;
     if (rest.length) {

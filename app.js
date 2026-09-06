@@ -21,7 +21,7 @@ var DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 var DAY_FLOW = [0, 1, 2, 3, 4, 5];
 var MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-var MAX_WEEK = 17;
+var MAX_WEEK = 18;
 var LS_KEY = "schedule307:v1";
 /* Недели — календарные, с понедельника (как в официальной сетке):
    неделя 1 — Вт 01.09–Вс 06.09 (семестр начинается во вторник),
@@ -29,6 +29,7 @@ var LS_KEY = "schedule307:v1";
    содержащей 01.09.2026, то есть 31.08.2026. */
 var SEMESTER_START = new Date(2026, 7, 31);   // понедельник недели 1, 2026-08-31
 var SEMESTER_FIRST_DAY = new Date(2026, 8, 1);   // 01.09.2026, вторник — до него занятий нет
+var SEMESTER_LAST_DAY = new Date(2026, 11, 31);  // 31.12.2026, четверг — неделя 18 обрывается здесь
 
 /* ---------- состояние ---------- */
 function readState() {
@@ -68,7 +69,8 @@ function todayInfo() {
     rawWeek: rawWeek,
     week: clamp(rawWeek, 1, MAX_WEEK) || 1,
     day: dow,                                                // воскресенье — собственный день (пустой), как в виджете
-    inSemester: rawWeek >= 1 && rawWeek <= 17 && now >= SEMESTER_FIRST_DAY
+    inSemester: rawWeek >= 1 && rawWeek <= MAX_WEEK &&
+      now >= SEMESTER_FIRST_DAY && now <= SEMESTER_LAST_DAY
   };
 }
 var TODAY = todayInfo();
@@ -122,8 +124,17 @@ function weekRange(w) {
   var a = new Date(SEMESTER_START); a.setDate(a.getDate() + (w - 1) * 7);
   if (a < SEMESTER_FIRST_DAY) a = new Date(SEMESTER_FIRST_DAY);
   var b = new Date(a); b.setDate(b.getDate() + 6 - ((b.getDay() + 6) % 7));
+  if (b > SEMESTER_LAST_DAY) b = new Date(SEMESTER_LAST_DAY);   // нед. 18: чт 31.12, не вс 03.01
   return pad2(a.getDate()) + "." + pad2(a.getMonth() + 1) + "–" +
     pad2(b.getDate()) + "." + pad2(b.getMonth() + 1);
+}
+/* День (неделя w, индекс di, 0 = пн) существует в семестре: неделя 1
+   начинается со вторника (31.08 — август), неделя 18 обрывается четвергом
+   31.12 — пятница-воскресенье уже январь. */
+function dayInSemester(w, di) {
+  var d = new Date(SEMESTER_START);
+  d.setDate(d.getDate() + (w - 1) * 7 + di);
+  return d >= SEMESTER_FIRST_DAY && d <= SEMESTER_LAST_DAY;
 }
 function parityOf(w) {
   if (w < 1 || w > MAX_WEEK) return "";
@@ -179,7 +190,7 @@ function mdaySectionHTML(group, di, week) {
 
 /* неделя: десктоп-сетка (7 колонок × 7 строк) + карточки дней для мобилы */
 function weekHTML(group, week) {
-  var cols = week === 1 ? DAY_FLOW.slice(1) : DAY_FLOW;   // в неделе 1 понедельника нет
+  var cols = DAY_FLOW.filter(function (di) { return dayInSemester(week, di); });   // нед. 1 без пн, нед. 18 без пт–вс
   var html = '<div class="table wk-grid">';
   html += '<div class="time"></div>';
   /* колонки пн..сб с датами в шапках */
@@ -276,7 +287,7 @@ function nextLessonAfter(group, fromDate) {
     if (raw > MAX_WEEK) return null;
     if (raw < 1) continue;
     var di = (d.getDay() + 6) % 7;
-    if (di > 5) continue;
+    if (di > 5 || !dayInSemester(raw, di)) continue;
     var ls = lessonsOfDay(group, di, raw);
     if (ls.length) return { date: d, dayIdx: di, week: raw, first: ls[0], count: ls.length };
   }
@@ -393,7 +404,17 @@ function syncThemeMeta() {
 function render() {
   /* В неделе 1 понедельника нет (31.08 до семестра) — вытесняем день 0,
      куда он мог попасть из сохранённого состояния или GET-параметра. */
-  if (state.week === 1 && state.day === 0) state.day = 1;
+  if (!dayInSemester(state.week, state.day)) {
+    /* День вне семестра (пн 31.08 в неделе 1, пт–вс в неделе 18) — открываем
+       ближайший существующий день: куда мог попасть из сохранённого
+       состояния или GET-параметра. */
+    var vdays = DAY_FLOW.filter(function (di) { return dayInSemester(state.week, di); });
+    if (vdays.length) {
+      state.day = vdays.reduce(function (a, di) {
+        return Math.abs(di - state.day) < Math.abs(a - state.day) ? di : a;
+      }, vdays[0]);
+    }
+  }
   document.body.dataset.view = state.view;
 
   var gseg = el("groupSeg").querySelectorAll("button");
@@ -424,9 +445,8 @@ function render() {
   /* Лента дней — календарный порядок пн..вс. Воскресенье в данных пар не
      имеет: вкладку показываем, только когда она осмысленна — сегодня вс
      или пользователь смотрит вс. */
-  var flow = [0, 1, 2, 3, 4, 5];
-  if (state.week === 1) flow.shift();   // в неделе 1 понедельника нет: 31.08 ещё до семестра
-  if (state.day === 6 || TODAY.day === 6) flow.push(6);
+  var flow = DAY_FLOW.filter(function (di) { return dayInSemester(state.week, di); });
+  if ((state.day === 6 || TODAY.day === 6) && dayInSemester(state.week, 6)) flow.push(6);
   flow.forEach(function (di) {
     var n = di === 6 ? "воскресенье" : DAYS[di];
     var isT = di === TODAY.day && TODAY.inSemester && state.week === TODAY.week;
@@ -633,7 +653,7 @@ function buildICS(group) {
         for (var wi = 0; wi < weeks.length; wi++) {
           var d = new Date(SEMESTER_START);
           d.setDate(d.getDate() + (weeks[wi] - 1) * 7 + di);
-          if (d < SEMESTER_FIRST_DAY) continue;   // понедельника недели 1 нет: 31.08 до семестра
+          if (d < SEMESTER_FIRST_DAY || d > SEMESTER_LAST_DAY) continue;   // 31.08 и 01.01+ вне семестра
           var tch = teacherOf(it.dmeta), aud = audOf(it.dmeta, weeks[wi]);
           lines.push("BEGIN:VEVENT",
             "UID:s307-" + group + "-" + di + "-" + ti + "-" + weeks[wi] + "@classgrid",
@@ -691,7 +711,7 @@ el("icsBtn").addEventListener("click", downloadICS);
     var nd = state.day + dir, nw = state.week;
     if (nd > 6) { nd = 0; if (nw >= MAX_WEEK) return; nw++; }
     else if (nd < 0) { nd = 6; if (nw <= 1) return; nw--; }
-    if (nd === 0 && nw === 1) return;   // Пн 31.08 — до начала семестра
+    if (!dayInSemester(nw, nd)) return;   // пн 31.08 и пт–вс недели 18 — вне семестра
     state.day = nd;
     state.week = nw;
     save(); render();
