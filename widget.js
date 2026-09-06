@@ -19,7 +19,11 @@
 
 const DATA_URL = "https://adelechik.github.io/classgrid/data.js";
 const SITE_URL = "https://adelechik.github.io/classgrid/";
-const SEMESTER_START = new Date(2026, 8, 1);   // 2026-09-01
+/* Недели календарные, с понедельника (как в сетке вуза): неделя 1 —
+   Вт 01.09–Вс 06.09, неделя 2 — Пн 07.09–Вс 13.09. Якорь — понедельник
+   календарной недели, содержащей 01.09.2026, то есть 31.08.2026.
+   Формула в weekOf совпадает с app.js на сайте. */
+const SEMESTER_START = new Date(2026, 7, 31);  // понедельник недели 1, 2026-08-31
 const MAX_WEEK = 17;
 const WIDGET_CACHE = "schedule307-data.json";
 
@@ -115,8 +119,9 @@ function todayIndex(d) {
 
 function weekOf(date) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diff = Math.floor(Math.round((d - SEMESTER_START) / 864e5) / 7) + 1;
-  return diff;
+  const dow = (d.getDay() + 6) % 7;   // 0 = Пн … 6 = Вс
+  const mon = new Date(d); mon.setDate(mon.getDate() - dow);
+  return Math.round((mon - SEMESTER_START) / (7 * 864e5)) + 1;
 }
 
 function itemsAt(data, group, dayIdx, timeIdx, week) {
