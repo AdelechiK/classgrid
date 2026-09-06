@@ -16,6 +16,10 @@ if (!DATA || !DATA.days || !DATA.times || !DATA.groups) {
 var DAYS = DATA.days;               // 6 полных названий, Пн..Сб
 var TIMES = DATA.times;             // 7 слотов
 var DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+/* Хронология блока недели: блок идёт вт..пн, поэтому в лентах дней
+   понедельник — последний (это последний день блока, например 07.09 в неделе 1,
+   а не «первый день следующей недели»). Совпадает с порядком свайпа. */
+var DAY_FLOW = [1, 2, 3, 4, 5, 0];
 var MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 var MAX_WEEK = 17;
@@ -171,13 +175,15 @@ function mdaySectionHTML(group, di, week) {
 function weekHTML(group, week) {
   var html = '<div class="table wk-grid">';
   html += '<div class="time"></div>';
-  DAYS.forEach(function (n, di) {
-    html += '<div class="wk-day' + (di === TODAY.day && TODAY.inSemester && week === TODAY.week ? " is-today" : "") +
-      '"><div class="dayh">' + n + "</div></div>";
+  /* колонки — по хронологии блока вт..пн, с датами в шапках */
+  DAY_FLOW.forEach(function (di) {
+    var today = di === TODAY.day && TODAY.inSemester && week === TODAY.week;
+    html += '<div class="wk-day' + (today ? " is-today" : "") +
+      '"><div class="dayh">' + DAY_SHORT[di] + "<span>" + dayDate(week, di) + "</span></div></div>";
   });
   TIMES.forEach(function (t, ti) {
     html += '<div class="time">' + t + "</div>";
-    for (var di = 0; di < 6; di++) {
+    DAY_FLOW.forEach(function (di) {
       var items = itemsFor(group, di, ti, week);
       if (items.length) {
         html += '<div class="wk-day">' + items.map(function (it) {
@@ -193,10 +199,11 @@ function weekHTML(group, week) {
           ? '<div class="wcell">Окно</div>'
           : '<div class="wcell nowin"></div>') + "</div>";
       }
-    }
+    });
   });
   html += "</div>";
-  html += DAYS.map(function (_, di) { return mdaySectionHTML(group, di, week); }).join("");
+  /* мобильные карточки — в том же хронологическом порядке вт..пн */
+  html += DAY_FLOW.map(function (di) { return mdaySectionHTML(group, di, week); }).join("");
   return html;
 }
 
@@ -403,17 +410,24 @@ function render() {
 
   var tabs = el("dayTabs");
   tabs.innerHTML = "";
-  DAYS.forEach(function (n, di) {
+  /* Лента дней идёт по хронологии блока (вт..пн), как и свайп. Воскресенье
+     в данных пар не имеет: вкладку показываем, только когда она осмысленна —
+     сегодня вс или пользователь смотрит вс. */
+  var flow = [1, 2, 3, 4, 5];
+  if (state.day === 6 || TODAY.day === 6) flow.push(6);
+  flow.push(0);
+  flow.forEach(function (di) {
+    var n = di === 6 ? "воскресенье" : DAYS[di];
+    var isT = di === TODAY.day && TODAY.inSemester && state.week === TODAY.week;
     var b = document.createElement("button");
     b.type = "button";
     b.setAttribute("role", "tab");
-    b.innerHTML = '<span class="dname">' + DAY_SHORT[di] + "</span>" +
+    b.innerHTML = '<span class="dname">' + (di === 6 ? "Вс" : DAY_SHORT[di]) + "</span>" +
       '<span class="ddate">' + dayDate(state.week, di) + "</span>";
     b.setAttribute("aria-label", n + ", " + dayDate(state.week, di));
     b.setAttribute("aria-selected", String(di === state.day && state.view === "day"));
-    if (di === TODAY.day && TODAY.inSemester && state.week === TODAY.week) b.classList.add("istoday");
-    b.title = n + ", неделя " + state.week +
-      (di === TODAY.day && TODAY.inSemester && state.week === TODAY.week ? ", сегодня" : "");
+    if (isT) b.classList.add("istoday");
+    b.title = n + ", неделя " + state.week + (isT ? ", сегодня" : "");
     b.addEventListener("click", function () {
       state.day = di;
       if (state.view !== "day") state.view = "day";
@@ -421,26 +435,6 @@ function render() {
     });
     tabs.appendChild(b);
   });
-  /* Воскресенье в данных пар не имеет: вкладку показываем, только когда
-     она осмысленна — сегодня вс или пользователь смотрит вс. */
-  if (state.day === 6 || TODAY.day === 6) {
-    var sunToday = TODAY.day === 6 && TODAY.inSemester && state.week === TODAY.week;
-    var b = document.createElement("button");
-    b.type = "button";
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(state.day === 6 && state.view === "day"));
-    b.innerHTML = '<span class="dname">Вс</span>' +
-      '<span class="ddate">' + dayDate(state.week, 6) + "</span>";
-    b.setAttribute("aria-label", "воскресенье, " + dayDate(state.week, 6));
-    if (sunToday) b.classList.add("istoday");
-    b.title = "воскресенье, неделя " + state.week + (sunToday ? ", сегодня" : "");
-    b.addEventListener("click", function () {
-      state.day = 6;
-      if (state.view !== "day") state.view = "day";
-      save(); render();
-    });
-    tabs.appendChild(b);
-  }
   var wb = document.createElement("button");
   wb.type = "button";
   wb.className = "allweek";
