@@ -1,6 +1,11 @@
 /* Виджет «Расписание 307» для Scriptable (iOS).
-   Минималистичный нативный дизайн: лейбл, название пары, кольцо-таймер
-   (сколько осталось до конца текущей пары или до начала следующей).
+   Поминутный формат без живого таймера: весь текст статичный и считается
+   при прогоне, поэтому счёт вверх после нуля (документированное поведение
+   системного timer-стиля) в принципе невозможен. Герой — «N минут» до
+   конца/начала пары; в дальних диапазонах — абсолютное время «12:10»,
+   которое не устаревает между прогонами. Прогоны — только по событиям:
+   в дальних диапазонах раз в 2–3 часа, в последний час — лестница 30/20/5/3
+   минуты; бюджет обновлений iOS 40–70 в день расходуется бережно.
    Данные: https://adelechik.github.io/classgrid/data.js, кэш в FileManager.local().
    Параметр виджета: «А» или «Б». Тап по виджету открывает сайт. */
 
@@ -97,7 +102,7 @@ function todayIndex() {
 
 function weekOf(date) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diff = Math.floor((d - SEMESTER_START) / 6048e5) + 1;
+  const diff = Math.floor(Math.round((d - SEMESTER_START) / 864e5) / 7) + 1;
   return diff;
 }
 
@@ -173,19 +178,21 @@ function nextLesson(data, timesMin, group, afterDate) {
 
 function hhmm(min) { return pad2(Math.floor(min / 60)) + ":" + pad2(min % 60); }
 
-/* Минуты в компактный вид для кольца: «45 мин», «1 ч 20». */
-/* Дата-граница состояния: конец текущей пары или начало следующей.
-   На неё ставим refreshAfterDate, её же показывает живой WidgetDate. */
-function boundaryDate(st) {
-  const b = st.kind === "now" ? st.lesson.end : st.lesson.start;
-  const n = st.now || new Date();
-  return new Date(n.getFullYear(), n.getMonth(), n.getDate(), 0, b);
+/* Русские склонения для героя «N минут»: 1 минута, 2 минуты, 5 минут, 21 минута. */
+function minWord(n) {
+  const d10 = n % 10, d100 = n % 100;
+  if (d10 === 1 && d100 !== 11) return "минута";
+  if (d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14)) return "минуты";
+  return "минут";
 }
 
 /* ---------- состояние «сейчас / скоро / свободно» ---------- */
 /* kind: now — пара идёт; next — до начала есть время; idle — сегодня пар нет. */
 function liveState(data, timesMin, group) {
-  const now = new Date();
+  return liveStateAt(data, timesMin, group, new Date());
+}
+
+function liveStateAt(data, timesMin, group, now) {
   const nm = now.getHours() * 60 + now.getMinutes();
   const dow = todayIndex();
   const week = weekOf(now);
@@ -200,87 +207,53 @@ function liveState(data, timesMin, group) {
     const cur = rest[0];
     return {
       kind: "now", lesson: cur,
-      leftMin: cur.end - nm,
+      leftMin: Math.max(1, cur.end - nm),
       frac: (nm - cur.start) / (cur.end - cur.start),
       later: rest.slice(1), now: new Date(now.getTime())
     };
   }
   if (rest.length) {
     const nxt = rest[0];
-    /* Дуга «до пары» заполняется от конца предыдущей пары (или за 2 ч до первой). */
+    /* Полоса прогресса «до пары» заполняется от конца предыдущей пары (или за 2 ч до первой). */
     const prevEnd = ls.filter(l => l.end <= nm).pop();
     const from = prevEnd ? prevEnd.end : nxt.start - 120;
     const span = Math.max(1, nxt.start - from);
     return {
-      kind: "next", lesson: nxt,
-      waitMin: nxt.start - nm,
+      kind: "next", lesson: nxt, inBreak: !!prevEnd,
+      waitMin: Math.max(1, nxt.start - nm),
       frac: Math.max(0, Math.min(1, (nm - from) / span)),
       later: rest.slice(1), now: new Date(now.getTime())
     };
   }
 
-  const title = !inWeek && week > MAX_WEEK ? "Каникулы" : "Сегодня пар нет";
   const when = DAY_SHORT[nextInfo.dayIdx] + ", " + nextInfo.date.getDate() + " " +
     MONTHS[nextInfo.date.getMonth()] + ", " + hhmm(nextInfo.first.start);
-  return { kind: "idle", title: title, meta: "Далее: " + when, now: new Date(now.getTime()) };
+  const nextAt = new Date(nextInfo.date.getFullYear(), nextInfo.date.getMonth(),
+    nextInfo.date.getDate(), 0, nextInfo.first.start);
+  return { kind: "idle", title: "Сегодня пар нет", meta: "Далее: " + when,
+    nextAt: nextAt, dayLessons: nextInfo.lessons, now: new Date(now.getTime()) };
 }
 
-/* Ближайшая пара после текущей/следующей — для строки «Далее: …». */
-function nextAfter(data, timesMin, group, st) {
-  if (st.later && st.later.length) {
-    return { name: st.later[0].name, start: st.later[0].start, dayIdx: todayIndex() };
-  }
-  const base = st.now || new Date();
-  const nx = nextLesson(data, timesMin, group, new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1));
-  if (!nx) return null;
-  return { name: nx.first.name, start: nx.first.start, dayIdx: nx.dayIdx };
-}
-
-/* ---------- кольцо-таймер (DrawContext + Path) ---------- */
-/* Дуга — кубические Безье (у Path нет arc), концы закруглены эллипсами.
-   Рисуем в 3x: фон ячейки 48pt с канвой 144px — чётко на Retina.
-   Центр оставляем пустым: там живой WidgetDate, тикающий между запусками.
+/* ---------- полоса прогресса (DrawContext, без живых элементов) ---------- */
+/* Статичный снимок доли прошедшего времени: обновляется только при прогоне,
+   между прогонами честно замирает. Рисуем в 3x для чёткости на Retina.
    Внутри канвы dynamic-цвета запрещены — выбираем по оформлению устройства. */
-function ringImage(frac, pt) {
-  const S = pt * 3;
-  const lw = Math.max(8, Math.round(S * 0.085));
-  const r = (S - lw) / 2;
+function barImage(frac, widthPt) {
+  const S = 3;
+  const W = Math.round(widthPt * S), H = 4 * S;
   const dark = Device.isUsingDarkAppearance();
   const trackC = new Color(dark ? "#38383a" : "#e5e5ea");
   const accC = new Color(dark ? "#0a84ff" : "#007aff");
   const dc = new DrawContext();
-  dc.size = new Size(S, S);
+  dc.size = new Size(W, H);
   dc.opaque = false;
-  dc.setStrokeColor(trackC);
-  dc.setLineWidth(lw);
-  dc.strokeEllipse(new Rect(lw / 2, lw / 2, S - lw, S - lw));
-
+  dc.setFillColor(trackC);
+  dc.fillRect(new Rect(0, 0, W, H));
   const f = Math.max(0, Math.min(1, frac));
   if (f > 0.005) {
-    const cx = S / 2, cy = S / 2;
-    const ptOn = a => new Point(cx + r * Math.sin(a), cy - r * Math.cos(a));
-    const total = f * 2 * Math.PI;
-    const p = new Path();
-    p.move(ptOn(0));
-    for (let a = 0; a < total - 1e-6; a += Math.PI / 2) {
-      const b = Math.min(a + Math.PI / 2, total);
-      const k = (4 / 3) * Math.tan((b - a) / 4);
-      const t1 = new Point(Math.cos(a), Math.sin(a));
-      const t2 = new Point(Math.cos(b), Math.sin(b));
-      const P1 = ptOn(b);
-      p.addCurve(P1,
-        new Point(ptOn(a).x + t1.x * r * k, ptOn(a).y + t1.y * r * k),
-        new Point(P1.x - t2.x * r * k, P1.y - t2.y * r * k));
-    }
-    dc.addPath(p);
-    dc.setStrokeColor(accC);
-    dc.strokePath();
     dc.setFillColor(accC);
-    for (const q of [ptOn(0), ptOn(total)]) {
-      dc.fillEllipse(new Rect(q.x - lw / 2, q.y - lw / 2, lw, lw));
-    }
+    dc.fillRect(new Rect(0, 0, Math.max(2 * S, Math.round(W * f)), H));
   }
-
   return dc.getImage();
 }
 
@@ -310,6 +283,8 @@ function addLessonRow(list, l) {
   const time = tc.addText(hhmm(l.start));
   time.font = Font.mediumSystemFont(13);
   time.textColor = C_TEXT;
+  time.lineLimit = 1;
+  time.minimumScaleFactor = 0.8;
   const name = row.addText(shortName(l.name));
   name.font = Font.regularSystemFont(14);
   name.textColor = C_TEXT;
@@ -323,113 +298,168 @@ function addLessonRow(list, l) {
   return row;
 }
 
+/* Заголовок состояния — первая строка, серым. */
+function stateTitle(st) {
+  if (st.kind === "idle") return st.title;   // «Сегодня пар нет» / «Каникулы»
+  if (st.kind === "now") return "Сейчас";
+  return st.inBreak ? "Перерыв" : "До пары";
+}
+
 async function createWidget(data, timesMin, group) {
   const st = liveState(data, timesMin, group);
   const w = new ListWidget();
-  w.setPadding(14, 15, 14, 15);
+  w.setPadding(12, 15, 12, 15);   // по вертикали теснее: двухстрочное имя + герой + полоса должны влезать в 158pt
   w.backgroundColor = C_BG;
   w.url = SITE_URL;   // тап по виджету открывает сайт в браузере по умолчанию
   const now = st.now || new Date();
+  const isMed = config.widgetFamily === "medium";
 
-  addHeader(w, group, config.widgetFamily !== "medium");
-  w.addSpacer(8);
+  addHeader(w, group, !isMed);
+  w.addSpacer(4);
 
-  if (st.kind === "idle") {
-    const title = w.addText(st.title);
-    title.font = Font.semiboldSystemFont(15);
-    title.textColor = C_TEXT;
-    title.lineLimit = 2;
-    if (st.meta) {
-      w.addSpacer(3);
-      const meta = w.addText(st.meta);
-      meta.font = Font.regularSystemFont(11);
+  /* medium: слева состояние и герой, справа — последующие пары дня. */
+  let left = w;
+  let rows = [];
+  if (st.kind === "now" || st.kind === "next") rows = (st.later || []).slice(0, 3);
+  if (st.kind === "idle" && st.dayLessons) rows = st.dayLessons.slice(0, 3);
+  if (isMed && rows.length) {
+    const body = w.addStack();
+    body.layoutHorizontally();
+    left = body.addStack();
+    left.layoutVertically();
+    left.spacing = 3;
+    left.size = new Size(120, 0);
+    body.addSpacer(8);
+    const right = body.addStack();
+    right.layoutVertically();
+    right.spacing = 7;
+    right.addSpacer();
+    for (const l of rows) addLessonRow(right, l);
+    right.addSpacer();
+  }
+
+  /* Дальняя зона — до пары больше 90 минут: герой показывает абсолютное
+     время, которое не устаревает между редкими прогонами. */
+  const far = st.kind === "next" && st.waitMin > 90;
+
+  const label = left.addText(stateTitle(st));
+  label.font = Font.semiboldSystemFont(10);
+  label.textColor = C_SUB;
+  label.lineLimit = 1;
+
+  /* Герой: число в ближней зоне, абсолютное время в дальней. Слово
+     («минут до конца пары») вынесено в подпись, чтобы число дышало
+     даже в узкой колонке medium. Весь текст статичный и считается при
+     прогоне: между прогонами ничего не тикает, счёт вверх невозможен. */
+  let heroBig = "", heroSub = "";
+  if (st.kind === "now") {
+    heroBig = String(st.leftMin);
+    heroSub = minWord(st.leftMin) + " до конца пары";
+  } else if (st.kind === "next") {
+    if (far) { heroBig = hhmm(st.lesson.start); heroSub = "начало пары"; }
+    else { heroBig = String(st.waitMin); heroSub = minWord(st.waitMin) + " до начала пары"; }
+  } else if (st.kind === "idle" && st.nextAt) {
+    const nmin = st.nextAt.getHours() * 60 + st.nextAt.getMinutes();
+    heroBig = hhmm(nmin);
+    const d = st.nextAt;
+    heroSub = DAY_SHORT[(d.getDay() + 6) % 7] + ", " + d.getDate() + " " + MONTHS[d.getMonth()];
+  }
+
+  const bigFont = Font.semiboldRoundedSystemFont(26);
+  const subFont = Font.regularSystemFont(11);
+
+  if (far || st.kind === "idle") {
+    /* Дальняя зона и «пар нет»: сначала время, потом что за пара. */
+    const big = left.addText(heroBig);
+    big.font = bigFont;
+    big.textColor = C_TEXT;
+    big.lineLimit = 1;
+    big.minimumScaleFactor = 0.8;
+    const sub = left.addText(heroSub);
+    sub.font = subFont;
+    sub.textColor = C_SUB;
+    sub.lineLimit = 1;
+    sub.minimumScaleFactor = 0.85;
+    if (st.kind === "next") {
+      const name = left.addText(shortName(st.lesson.name));
+      name.font = Font.semiboldSystemFont(15);
+      name.textColor = C_TEXT;
+      name.lineLimit = 2;
+      name.minimumScaleFactor = 0.85;
+      const meta = left.addText(st.lesson.aud ? "ауд. " + st.lesson.aud : "сегодня");
+      meta.font = subFont;
       meta.textColor = C_SUB;
       meta.lineLimit = 1;
       meta.minimumScaleFactor = 0.85;
     }
-  } else {
-    const body = w.addStack();
-    body.layoutHorizontally();
-    body.centerAlignContent();
-    const left = body.addStack();
-    left.layoutVertically();
-    left.spacing = 3;
-    const label = left.addText(st.kind === "now" ? "Сейчас" : "Следующая");
-    label.font = Font.semiboldSystemFont(10);
-    label.textColor = C_SUB;
+  } else if (st.kind === "next" || st.kind === "now") {
+    /* Ближняя зона: что за пара, герой — сколько минут. */
     const name = left.addText(shortName(st.lesson.name));
     name.font = Font.semiboldSystemFont(15);
     name.textColor = C_TEXT;
     name.lineLimit = 2;
     name.minimumScaleFactor = 0.85;
     const aud = st.lesson.aud ? ", ауд. " + st.lesson.aud : "";
-    const metaTxt = st.kind === "now"
-      ? "до " + hhmm(st.lesson.end) + aud
-      : "в " + hhmm(st.lesson.start) + aud;
-    const meta = left.addText(metaTxt);
-    meta.font = Font.regularSystemFont(11);
+    const meta = left.addText((st.kind === "now" ? "до " : "в ") +
+      hhmm(st.kind === "now" ? st.lesson.end : st.lesson.start) + aud);
+    meta.font = subFont;
     meta.textColor = C_SUB;
     meta.lineLimit = 1;
     meta.minimumScaleFactor = 0.85;
-
-    body.addSpacer();
-    /* Кольцо — фон ячейки, а внутри живой WidgetDate: система сама тикает
-       отсчётом между запусками скрипта, снимок виджета сам не обновится. */
-    const cell = body.addStack();
-    cell.layoutVertically();
-    cell.size = new Size(48, 48);
-    cell.backgroundImage = ringImage(st.frac, 48);
-    cell.addSpacer();
-    const mid = cell.addStack();
-    mid.layoutHorizontally();
-    mid.addSpacer();
-    const live = mid.addDate(boundaryDate(st));
-    live.applyTimerStyle();
-    live.font = Font.semiboldSystemFont(10);
-    live.textColor = C_TEXT;
-    live.minimumScaleFactor = 0.75;
-    mid.addSpacer();
-    cell.addSpacer();
+    left.addSpacer();
+    const big = left.addText(heroBig);
+    big.font = bigFont;
+    big.textColor = C_TEXT;
+    big.lineLimit = 1;
+    big.minimumScaleFactor = 0.8;
+    const sub = left.addText(heroSub);
+    sub.font = subFont;
+    sub.textColor = C_SUB;
+    sub.lineLimit = 1;
+    sub.minimumScaleFactor = 0.85;
   }
 
-  /* Перезапрос снимка: на границе состояния, но не реже чем раз в 15 минут
-     (бюджет обновлений iOS ограничен; сам отсчёт при этом тикает всегда). */
-  const refreshAt = new Date(now.getTime() + 15 * 60 * 1000);
-  const boundary = st.kind === "idle" ? null : boundaryDate(st);
-  if (boundary && boundary > now) {
-    const atBoundary = new Date(boundary.getTime() + 30 * 1000);
-    if (atBoundary < refreshAt) refreshAt.setTime(atBoundary.getTime());
-  }
-  w.refreshAfterDate = refreshAt;
-
-  /* Строка «Далее: …» — что идёт после показанной пары (кроме medium: там список). */
-  if (st.kind !== "idle" && config.widgetFamily !== "medium") {
-    const nx = nextAfter(data, timesMin, group, st);
-    if (nx) {
-      w.addSpacer();
-      const sameDay = nx.dayIdx === todayIndex();
-      const tail = sameDay ? hhmm(nx.start)
-        : DAY_SHORT[nx.dayIdx] + ", " + hhmm(nx.start);
-      const foot = w.addText("Далее: " + shortName(nx.name) + ", " + tail);
-      foot.font = Font.regularSystemFont(10);
-      foot.textColor = C_SUB;
-      foot.lineLimit = 1;
-      foot.minimumScaleFactor = 0.8;
-    }
+  /* Статичная полоса прогресса: обновляется при прогоне, между прогонами
+     честно замирает. */
+  if (st.frac != null) {
+    const barW = isMed ? 308 : 128;
+    w.addSpacer(4);
+    const bar = w.addImage(barImage(st.frac, barW));
+    bar.imageSize = new Size(barW, 4);
   }
 
-  /* medium: герой уже показан, ниже — до двух последующих пар без дублей */
-  if (config.widgetFamily === "medium" && st.kind !== "idle" && st.later.length) {
-    w.addSpacer(6);
-    const list = w.addStack();
-    list.layoutVertically();
-    list.spacing = 7;
-    for (let i = 0; i < Math.min(2, st.later.length); i++) {
-      addLessonRow(list, st.later[i]);
-    }
-  }
-
+  /* Прогон заказывается по лестнице ниже; сам план — в nextRefreshDate. */
+  w.refreshAfterDate = nextRefreshDate(st, now);
   return w;
+}
+
+/* ---------- план прогонов: событийно, бережно к бюджету 40–70/день ---------- */
+/* Лестница сгущается у границы: дальше 30 минут — шаг 30, дальше 15 — шаг 20,
+   дальше 6 — шаг 5, потом шаг 3. В дальней зоне шаг 3 часа с заходом на
+   отметку 90 минут, где герой переключается со времени на минуты.
+   Ночных прогонов нет — до полуночи или до ближайшей границы. */
+function nextRefreshDate(st, now) {
+  if (st.kind === "idle") {
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 30);
+    return st.nextAt
+      ? new Date(Math.min(st.nextAt.getTime() - 2 * 60000, midnight.getTime()))
+      : midnight;
+  }
+  const nm = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  const target = st.kind === "now" ? st.lesson.end : st.lesson.start;
+  const rem = target - nm;
+  if (rem > 90) {
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const t90 = new Date(base.getTime() + (target - 90) * 60000);
+    return new Date(Math.min(now.getTime() + 3 * 3600000,
+      Math.max(t90.getTime(), now.getTime() + 120000)));
+  }
+  let step;
+  if (rem > 30) step = 30;
+  else if (rem > 15) step = 20;
+  else if (rem > 6) step = 5;
+  else step = 3;
+  return new Date(now.getTime() + step * 60000);
 }
 
 /* ---------- запуск ---------- */
@@ -446,17 +476,30 @@ if (!data || !data.times || !data.groups) {
   err.addText("Расписание 307");
   err.addText("Нет данных: " + (fetchError || "нет сети и кэша"));
   err.addText("Откройте Scriptable при интернете — расписание сохранится для офлайна");
-  err.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
+  err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
   if (!config.runsInWidget) await err.presentSmall();
   Script.setWidget(err);
   Script.complete();
 } else {
-  const timesMin = parseTimes(data.times);
-  const widget = await createWidget(data, timesMin, group);
-  if (config.runsInWidget) {
+  let widget = null;
+  try {
+    widget = await createWidget(data, parseTimes(data.times), group);
+  } catch (e) {
+    fetchError = fetchError || "сбой отрисовки: " + String(e).slice(0, 60);
+    console.error("Итог: " + fetchError);
+  }
+  if (!widget) {
+    const err = new ListWidget();
+    err.url = SITE_URL;
+    err.addText("Расписание 307");
+    err.addText("Ошибка показа: " + fetchError);
+    err.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
+    if (!config.runsInWidget) await err.presentSmall();
+    Script.setWidget(err);
+  } else if (config.runsInWidget) {
     Script.setWidget(widget);
   } else {
-    widget.presentSmall();
+    await widget.presentSmall();
   }
   Script.complete();
 }

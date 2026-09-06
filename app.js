@@ -42,7 +42,7 @@ function save() {
 function startOfDay(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function todayInfo() {
   var now = startOfDay(new Date());
-  var diff = Math.floor((now - SEMESTER_START) / 6048e5);   // 7 суток
+  var diff = Math.floor(Math.round((now - SEMESTER_START) / 864e5) / 7);   // 7 суток, устойчиво к переводу часов
   var rawWeek = diff + 1;
   var dow = (now.getDay() + 6) % 7;                          // 0 = Пн, 6 = Вс
   var dayIdx = dow === 6 ? 0 : dow;                          // воскресенье -> понедельник
@@ -245,7 +245,7 @@ function nextLessonAfter(group, fromDate) {
   for (var k = 1; k <= MAX_WEEK * 7; k++) {
     var d = new Date(fromDate);
     d.setDate(d.getDate() + k);
-    var raw = Math.floor((startOfDay(d) - SEMESTER_START) / 6048e5) + 1;
+    var raw = Math.floor(Math.round((startOfDay(d) - SEMESTER_START) / 864e5) / 7) + 1;
     if (raw > MAX_WEEK) return null;
     if (raw < 1) continue;
     var di = (d.getDay() + 6) % 7;
