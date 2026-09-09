@@ -7,9 +7,9 @@
    Поминутный формат без живого таймера: весь текст статичный и считается
    при прогоне, поэтому счёт вверх после нуля (документированное поведение
    системного timer-стиля) в принципе невозможен. Прогоны — только по
-   событиям: в дальней зоне раз в 2–3 часа с заходом на отметку 90 минут,
-   в последние 90 минут — лестница 30/20/5/3, последний шаг точно на
-   границу события; бюджет обновлений iOS 40–70 в день расходуется бережно.
+   границам событий: начало или конец пары, полночь, минус 2 минуты до
+   первой пары дня (5–14 в день вместо ~47 у лестницы). Между прогонами
+   картинка честно замирает, как у статичных календарных виджетов.
    Значок обновления (medium) перезапускает этот же скрипт через
    scriptable:///run?refresh=1&group=… — Scriptable заново тянет данные
    и пересобирает виджет, бюджет WidgetKit не расходуется. В small у
@@ -270,8 +270,24 @@ function trafficColor(min) {
 
 /* ---------- полоса прогресса (DrawContext, без живых элементов) ---------- */
 /* Статичный снимок доли прошедшего времени: обновляется только при прогоне,
-   между прогонами честно замирает. Рисуем в 3x для чёткости на Retina.
+   между прогонами честно замирает. Рисуем в 3x для чёткости на Retina,
+   концы скруглены до полной пилюли (Path без arc — четвертные кривые Безье).
    Внутри канвы dynamic-цвета запрещены — выбираем по оформлению устройства. */
+function roundRectPath(w, h) {
+  const r = h / 2, k = r * 0.5523;
+  const p = new Path();
+  p.move(new Point(r, 0));
+  p.addLine(new Point(w - r, 0));
+  p.addCurve(new Point(w, r), new Point(w - r + k, 0), new Point(w, r - k));
+  p.addLine(new Point(w, h - r));
+  p.addCurve(new Point(w - r, h), new Point(w, h - r + k), new Point(w - r + k, h));
+  p.addLine(new Point(r, h));
+  p.addCurve(new Point(0, h - r), new Point(r - k, h), new Point(0, h - r + k));
+  p.addLine(new Point(0, r));
+  p.addCurve(new Point(r, 0), new Point(0, r - k), new Point(r - k, 0));
+  p.closeSubpath();
+  return p;
+}
 function barImage(frac, widthPt, min) {
   const S = 3;
   const W = Math.round(widthPt * S), H = 4 * S;
@@ -282,11 +298,13 @@ function barImage(frac, widthPt, min) {
   dc.size = new Size(W, H);
   dc.opaque = false;
   dc.setFillColor(trackC);
-  dc.fillRect(new Rect(0, 0, W, H));
+  dc.addPath(roundRectPath(W, H));
+  dc.fillPath();
   const f = Math.max(0, Math.min(1, frac));
   if (f > 0.005) {
     dc.setFillColor(accC);
-    dc.fillRect(new Rect(0, 0, Math.max(2 * S, Math.round(W * f)), H));
+    dc.addPath(roundRectPath(Math.max(H, Math.round(W * f)), H));
+    dc.fillPath();
   }
   return dc.getImage();
 }
@@ -539,12 +557,15 @@ async function createWidget(data, timesMin, group) {
   return w;
 }
 
-/* ---------- план прогонов: событийно, бережно к бюджету 40–70/день ---------- */
-/* Лестница сгущается у границы: дальше 30 минут — шаг 30, дальше 15 — шаг 20,
-   дальше 6 — шаг 5, потом шаг 3; шаг не перелетает границу события —
-   прогон попадает точно на начало или конец пары. В дальней зоне шаг 3 часа
-   с заходом на отметку 90 минут, где герой переключается со времени на
-   минуты. Ночных прогонов нет — до полуночи или до ближайшей границы. */
+/* ---------- план прогонов: только границы событий, бережно к бюджету ---------- */
+/* Картинка виджета статична, поэтому «живого» смысла у промежуточных прогонов
+   нет: что бы мы ни обновили в середине пары, цифра тут же устареет. Прогон
+   имеет смысл ровно в момент смены состояния — начало или конец пары — плюс
+   при пробуждении дня: в полночь (перевод календаря) и за 2 минуты до первой
+   пары ближайшего дня с занятиями. В худший день с шестью парами это
+   12 границ + полночь + подготовка утра ≈ 14 прогонов вместо ~47 у прежней
+   лестницы 30/20/5/3. Между прогонами счётчик честно замирает — так ведут
+   себя и системные статичные виджеты календаря. */
 function nextRefreshDate(st, now) {
   if (st.kind === "idle") {
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 30);
@@ -552,21 +573,9 @@ function nextRefreshDate(st, now) {
       ? new Date(Math.min(st.nextAt.getTime() - 2 * 60000, midnight.getTime()))
       : midnight;
   }
-  const nm = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const target = st.kind === "now" ? st.lesson.end : st.lesson.start;
-  const rem = target - nm;
-  if (rem > 90) {
-    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const t90 = new Date(base.getTime() + (target - 90) * 60000);
-    return new Date(Math.min(now.getTime() + 3 * 3600000,
-      Math.max(t90.getTime(), now.getTime() + 120000)));
-  }
-  let step;
-  if (rem > 30) step = 30;
-  else if (rem > 15) step = 20;
-  else if (rem > 6) step = 5;
-  else step = 3;
-  return new Date(now.getTime() + Math.min(step, rem) * 60000);
+  return new Date(base.getTime() + target * 60000);
 }
 
 /* ---------- запуск ---------- */
