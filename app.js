@@ -140,22 +140,23 @@ function parityOf(w) {
   if (w < 1 || w > MAX_WEEK) return "";
   return w % 2 ? "нечёт" : "чёт";
 }
-/* один слот: items | «Окно» | пустой край */
+/* один слот: items | «Окно» | пустой край; data-ti — индекс времени,
+   по нему updateLive ставит статусы независимо от того, какие строки скрыты */
 function slotHTML(group, di, ti, week, opts) {
   var items = itemsFor(group, di, ti, week);
   var cls = "slot" + (ti === TIMES.length - 1 ? " last" : "");
   var head = '<div class="t">' + TIMES[ti] + "</div>";
   if (items.length) {
-    return '<div class="' + cls + '">' + head +
+    return '<div class="' + cls + '" data-ti="' + ti + '">' + head +
       '<div class="items">' + items.map(itemHTML).join("") + "</div></div>";
   }
   var before = false, after = false;
   for (var i = 0; i < ti; i++) if (itemsFor(group, di, i, week).length) { before = true; break; }
   for (var j = ti + 1; j < TIMES.length; j++) if (itemsFor(group, di, j, week).length) { after = true; break; }
   if (before && after) {
-    return '<div class="' + cls + ' win">' + head + '<div class="wtxt">Окно</div></div>';
+    return '<div class="' + cls + '" data-ti="' + ti + '">' + head + '<div class="wtxt">Окно</div></div>';
   }
-  return '<div class="' + cls + '">' + head + '<div class="wtxt">&nbsp;</div></div>';
+  return '<div class="' + cls + '" data-ti="' + ti + '">' + head + '<div class="wtxt">&nbsp;</div></div>';
 }
 
 function daySectionHTML(group, di, week) {
@@ -163,7 +164,18 @@ function daySectionHTML(group, di, week) {
   for (var t = 0; t < TIMES.length; t++) if (itemsFor(group, di, t, week).length) { hasAny = true; break; }
   var rows = "";
   if (hasAny) {
-    rows = TIMES.map(function (_, ti) { return slotHTML(group, di, ti, week); }).join("");
+    /* Края дня без пар скрываем — четыре пустые строки до первой пары
+       только отодвигают содержимое; «Окна» между парами остаются. */
+    var firstT = 0;
+    while (firstT < TIMES.length && !itemsFor(group, di, firstT, week).length) firstT++;
+    var lastT = TIMES.length - 1;
+    while (lastT > firstT && !itemsFor(group, di, lastT, week).length) lastT--;
+    var parts = [];
+    for (var k = firstT; k <= lastT; k++) parts.push(slotHTML(group, di, k, week));
+    /* нижняя граница должна стоять на последнем показанном слоте */
+    rows = parts.map(function (h, idx) {
+      return idx === parts.length - 1 ? h.replace(' class="slot"', ' class="slot last"').replace(/class="slot win"/, 'class="slot win last"') : h;
+    }).join("");
   } else {
     rows = '<div class="dayempty">В этот день занятий нет</div>';
   }
@@ -333,17 +345,23 @@ function liveInfo() {
     } else {
       sub += ". Это последняя пара на сегодня";
     }
-    return { label: "Сейчас", isNow: true, title: cur.item.name + ", до " + hhmm(cur.end), sub: sub };
+    return { label: "Сейчас", isNow: true, title: cur.item.name + ", до " + hhmm(cur.end), sub: sub,
+      bar: { frac: (nm - cur.start) / (cur.end - cur.start) } };
   }
   for (i = 0; i < ls.length; i++) if (ls[i].start > nm) { next = ls[i]; break; }
   if (next) {
     var a = audOf(next.item.dmeta, TODAY.week);
     if (nm < ls[0].start) {
       return { label: "Сегодня", isNow: false, title: "Первая пара в " + hhmm(next.start),
-        sub: next.item.name + (a ? ", ауд. " + a : "") };
+        sub: next.item.name + (a ? ", ауд. " + a : ""),
+        bar: { frac: 0 } };
     }
+    var prevEnd = null;
+    for (i = 0; i < ls.length; i++) if (ls[i].end <= nm) prevEnd = ls[i];
+    var from = prevEnd ? prevEnd.end : next.start - 120;
     return { label: "Сегодня", isNow: false, title: "Окно до " + hhmm(next.start),
-      sub: "Далее — " + next.item.name + (a ? ", ауд. " + a : "") };
+      sub: "Далее — " + next.item.name + (a ? ", ауд. " + a : ""),
+      bar: { frac: Math.max(0, Math.min(1, (nm - from) / (next.start - from))) } };
   }
   var nx3 = nextLessonAfter(state.group, startOfDay(new Date()));
   if (!nx3) return null;
@@ -361,10 +379,12 @@ function updateLive() {
   var c = el("content");
   if (!c || !viewingActualToday()) return;
   var sec = c.querySelector("section.day");
-  var slots = sec ? sec.querySelectorAll(".slot") : [];
+  var slots = sec ? sec.querySelectorAll(".slot[data-ti]") : [];
   var nm = nowMinutes(), week = TODAY.week, di = realDow();
-  for (var ti = 0; ti < slots.length && ti < TIMES.length; ti++) {
-    var s = slots[ti];
+  for (var i = 0; i < slots.length; i++) {
+    var s = slots[i];
+    var ti = parseInt(s.dataset.ti, 10);
+    if (!(ti >= 0 && ti < TIMES.length)) continue;
     if (!s.querySelector(".it")) continue;   // «Окна» и пустые крайние — без статуса
     var m = TIMES_MIN[ti];
     s.classList.remove("now", "soon", "past");
@@ -385,11 +405,16 @@ function updateLive() {
   var html = '<div class="nc-label">' + esc(info.label) + "</div>" +
     '<div class="nc-title">' + esc(info.title) + "</div>" +
     '<div class="nc-sub">' + esc(info.sub) + "</div>";
+  if (info.bar) html += '<div class="nc-bar"><i></i></div>';
   if (nowcardCache !== html) {
     card.innerHTML = html;
     card.classList.toggle("is-now", !!info.isNow);
     nowcardCache = html;
   }
+  /* ширина полосы меняется каждую минуту — обновляем напрямую,
+     чтобы не перестраивать текст карточки */
+  var fill = card.querySelector(".nc-bar i");
+  if (fill && info.bar) fill.style.width = Math.round(info.bar.frac * 100) + "%";
   var em = el("emptyMsg");
   if (em) em.hidden = true;   // «Сегодня пар нет» на карточке вместо общей заглушки
 }

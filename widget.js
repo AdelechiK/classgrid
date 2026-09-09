@@ -223,7 +223,7 @@ function liveStateAt(data, timesMin, group, now) {
   const dow = todayIndex(now);
   const week = weekOf(now);
   const nextInfo = nextLesson(data, timesMin, group, now);
-  if (!nextInfo) return { kind: "idle", title: "Каникулы" };
+  if (!nextInfo) return { kind: "idle", title: "Каникулы", now: new Date(now.getTime()) };
 
   const inWeek = dow <= 5 && week >= 1 && week <= MAX_WEEK;
   const ls = inWeek ? lessonsOfDay(data, timesMin, group, dow, week) : [];
@@ -345,6 +345,7 @@ function addLessonRow(list, l) {
   right.font = Font.regularSystemFont(12);
   right.textColor = C_SUB;
   right.lineLimit = 1;
+  right.minimumScaleFactor = 0.8;
   return row;
 }
 
@@ -371,8 +372,10 @@ function idleMeta(st) {
     MONTHS_SHORT[d.getMonth()] + ", " + hhmm(d.getHours() * 60 + d.getMinutes());
 }
 
-/* Правая колонка medium: следующая пара либо расписание ближайшего дня. */
-function addSidePanel(right, st, now, far) {
+/* Правая колонка medium: следующая пара либо расписание ближайшего дня.
+   full — колонка развёрнута на всю ширину (medium idle): делим на две части,
+   слева время и «ауд.», справа имя, чтобы строки не слипались в одну. */
+function addSidePanel(right, st, now, far, full) {
   if (st.kind === "idle") {
     if (!st.nextAt || !st.dayLessons || !st.dayLessons.length) {
       const none = right.addText("ДАЛЬШЕ ПАР НЕТ");
@@ -387,7 +390,32 @@ function addSidePanel(right, st, now, far) {
     hdr.font = Font.semiboldSystemFont(10);
     hdr.textColor = C_SUB;
     hdr.lineLimit = 1;
-    for (const l of st.dayLessons.slice(0, 3)) addLessonRow(right, l);
+    right.addSpacer(full ? 4 : 2);
+    for (const l of st.dayLessons.slice(0, 3)) {
+      if (full) {
+        const row = right.addStack();
+        row.layoutHorizontally();
+        row.spacing = 8;
+        row.centerAlignContent();
+        const tc = row.addText(hhmm(l.start));
+        tc.font = Font.mediumSystemFont(13);
+        tc.textColor = C_TEXT;
+        tc.lineLimit = 1;
+        const nm2 = row.addText(shortName(l.name));
+        nm2.font = Font.regularSystemFont(13);
+        nm2.textColor = C_TEXT;
+        nm2.lineLimit = 1;
+        nm2.minimumScaleFactor = 0.7;
+        row.addSpacer();
+        const rr = row.addText(l.aud ? "ауд. " + l.aud : "");
+        rr.font = Font.regularSystemFont(12);
+        rr.textColor = C_SUB;
+        rr.lineLimit = 1;
+        rr.minimumScaleFactor = 0.8;
+      } else {
+        addLessonRow(right, l);
+      }
+    }
     return;
   }
   const nm = now.getHours() * 60 + now.getMinutes();
@@ -433,9 +461,10 @@ async function createWidget(data, timesMin, group) {
      время, которое не устаревает между редкими прогонами. */
   const far = st.kind === "next" && st.waitMin > 90;
 
-  /* medium: слева состояние и герой, справа — «далее». */
+  /* medium: слева состояние и герой, справа — «далее». В idle список пар
+       идёт во всю ширину — каркас двух колонок не нужен. */
   let left = w;
-  if (isMed) {
+  if (isMed && st.kind !== "idle") {
     const body = w.addStack();
     body.layoutHorizontally();
     left = body.addStack();
@@ -458,8 +487,12 @@ async function createWidget(data, timesMin, group) {
 
   if (st.kind === "idle") {
     /* Только текст: строка «когда пара» по центру свободного места.
-       В medium она не нужна — расписание ближайшего дня в правой колонке. */
-    if (!isMed) {
+       В medium левая колонка не нужна вовсе — расписание ближайшего дня
+       разворачиваем на всю ширину: слева оставлять пустоту ради симметрии
+       на узком виджете грешно. */
+    if (isMed) {
+      addSidePanel(w, st, now, far, true);
+    } else {
       left.addSpacer();
       const meta = left.addText(idleMeta(st));
       meta.font = Font.semiboldSystemFont(11);
