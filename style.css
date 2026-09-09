@@ -205,22 +205,24 @@ section.day:first-of-type h2 { margin-top: 4px; }
   padding: 7px 0; border-bottom: 1px solid var(--line);
 }
 .slot.last { border-bottom: none; padding-bottom: 2px; }
-.slot .t { font-weight: 600; font-size: 13px; white-space: nowrap; padding-left: 5px; padding-top: 2px; }
+/* время выровнено по базовой линии первой строки названия: та же 13px
+   и тот же межстрочный 1.3, без вертикального паддинга */
+.slot .t { font-weight: 600; font-size: 13px; line-height: 1.3; white-space: nowrap; padding-left: 7px; }
 .slot.win .wtxt { font-size: 12px; color: var(--fg2); }
 
-/* статусные полосы: абсолютный ::before не участвует в сетке,
-   ложится в 5px-отступ .t слева — выравнивание колонок не меняется */
+/* статусные нити: абсолютный ::before не участвует в сетке, тянется ровно
+   на высоту текстового блока (7px-паддинги строки) — колонки не меняет */
 .slot.now::before,
 .slot.soon::before {
-  content: ""; position: absolute; left: 0; top: 5px; bottom: 5px;
-  width: 3px; border-radius: 2px;
+  content: ""; position: absolute; left: 0; top: 7px; bottom: 7px;
+  width: 2px; border-radius: 1px;
 }
 /* текущая пара — тихо: без заливки и цветной палки, Apple-way.
    Акцент только в двух местах: время становится синим и жирным,
    слева тонкая 2px нить во всю высоту строки, как в списках настроек. */
-.slot.now::before { width: 2px; background: var(--status-now); opacity: 0.9; }
+.slot.now::before { background: var(--status-now); opacity: 0.9; }
 .slot.now .t { color: var(--status-now); }
-.slot.soon::before { width: 2px; background: var(--status-soon); opacity: 0.7; }
+.slot.soon::before { background: var(--status-soon); opacity: 0.7; }
 .slot.past { opacity: 0.45; }
 
 /* бейдж «идёт сейчас» — маленькая живая точка перед названием */
