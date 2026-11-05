@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" id="metaTheme">
+<title>Журнал 307</title>
+<meta name="description" content="Журнал посещаемости групп А и Б: отметки по парам, сводка пропусков и список студентов.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="journal.css">
+<script>
+try{var __s=JSON.parse(localStorage.getItem("journal307:ui")||"{}");var __p=JSON.parse(localStorage.getItem("schedule307:v1")||"{}");var __d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=__s.theme||__p.theme||(__d?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}
+</script>
+</head>
+<body>
+<header class="hdr">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Журнал 307</h1>
+      <p class="sub" id="syncBadge" hidden></p>
+    </div>
+    <div class="hdr-actions">
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Переключить тему">
+        <svg class="ic-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3L17 7M7 17l-1.7 1.7"/></svg>
+        <svg class="ic-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="headrow">
+      <div class="seg" id="viewSeg" role="group" aria-label="Раздел журнала" style="flex:1 1 auto; min-width:0;">
+        <button type="button" data-view="marks" aria-pressed="true">Отметки</button>
+        <button type="button" data-view="stats" aria-pressed="false">Сводка</button>
+        <button type="button" data-view="roster" aria-pressed="false">Список</button>
+      </div>
+      <div class="seg groupseg" id="groupSeg" role="group" aria-label="Учебная группа">
+        <button type="button" data-group="А" aria-pressed="true" aria-label="Группа А">А</button>
+        <button type="button" data-group="Б" aria-pressed="false" aria-label="Группа Б">Б</button>
+      </div>
+    </div>
+
+    <div class="weekrow" id="weekRow" hidden>
+      <button class="wk-step" id="weekPrev" type="button" aria-label="Предыдущая неделя">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="seg weekseg" id="weekSeg" role="group" aria-label="Неделя семестра"></div>
+      <button class="wk-step" id="weekNext" type="button" aria-label="Следующая неделя">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <button class="weekpill" id="weekPill" type="button" aria-expanded="false" aria-controls="weekRow">
+      <span id="weekPillText"></span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+
+    <nav class="daytabs" id="dayTabs" role="tablist" aria-label="День недели"></nav>
+  </div>
+
+  <button class="backtoday" id="backToday" type="button" hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 5l-7 7 7 7"/></svg>
+    <span>Вернуться к сегодняшнему дню</span>
+  </button>
+</header>
+<main id="main">
+  <section id="viewMarks"></section>
+  <section id="viewStats" hidden></section>
+  <section id="viewRoster" hidden></section>
+  <p class="empty" id="emptyMsg" hidden>В этот день занятий нет</p>
+</main>
+
+<footer class="ftr">
+  <p class="legend"><span class="pill pill-was">Был</span> — присутствовал на паре</p>
+  <p class="legend"><span class="pill pill-abs">Не был</span> — отсутствует, причина указана под именем</p>
+  <p class="legend"><span class="pill pill-unc">Не отмечен</span> — ещё не отмечали</p>
+  <p class="ftr-row">
+    <a href="index.html" class="flink">Расписание</a>
+    <button class="linkbtn" id="exportBtn" type="button">Экспорт данных</button>
+    <button class="linkbtn" id="importBtn" type="button">Импорт данных</button>
+    <button class="linkbtn" id="syncCfg" type="button">Синхронизация…</button>
+  </p>
+  <p class="ftr-meta">Отметки хранятся на устройстве; синхронизация – приватный репозиторий GitHub.</p>
+</footer>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<div class="sheet-backdrop" id="sheetBd" hidden></div>
+<div class="sheet" id="reasonSheet" hidden role="dialog" aria-label="Причина отсутствия">
+  <p class="sheet-title">Причина отсутствия</p>
+  <p class="sheet-sub" id="sheetWho"></p>
+  <button class="rsn" type="button" data-r="b">Болезнь</button>
+  <button class="rsn" type="button" data-r="u">Уважительная</button>
+  <button class="rsn" type="button" data-r="n">Неуважительная</button>
+  <button class="rsn" type="button" data-r="ip">Индивидуальный план обучения</button>
+  <div class="rsn-custom">
+    <input id="rsnText" type="text" placeholder="Своя причина…">
+    <button class="rsn-go" id="rsnGo" type="button">Готово</button>
+  </div>
+  <button class="rsn-clear" id="rsnClear" type="button">Убрать отметку</button>
+</div>
+<div class="sheet" id="delSheet" hidden role="dialog" aria-label="Удалить студента?">
+  <p class="sheet-title">Удалить студента?</p>
+  <p class="sheet-sub" id="delSub"></p>
+  <button class="rsn" type="button" id="delKeep">В историю</button>
+  <button class="rsn rsn-clear" type="button" id="delWipe">Стереть</button>
+  <button class="rsn" type="button" id="delCancel">Отмена</button>
+</div>
+<div class="snackbar" id="snackbar" hidden><span id="snackText"></span><button class="linkbtn" id="snackUndo" type="button">Отменить</button></div>
+
+<script src="data.js"></script>
+<script src="journal-store.js"></script>
+<script src="journal.js"></script>
+</body>
+</html>

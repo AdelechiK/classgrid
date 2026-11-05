@@ -1,7 +1,7 @@
 /* Расписание 307 — service worker: network-first, офлайн-фолбэк из кэша. */
 "use strict";
 
-var CACHE = "schedule307-v31";
+var CACHE = "schedule307-v32";
 var ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,10 @@ var ASSETS = [
   "./style.css",
   "./app.js",
   "./data.js",
+  "./journal.html",
+  "./journal.css",
+  "./journal-store.js",
+  "./journal.js",
   "./widget.js",
   "./manifest.webmanifest",
   "./icon.svg",
