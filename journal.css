@@ -21,6 +21,19 @@ html[data-theme="dark"] {
 #syncBadge.sync-warn { color: var(--status-soon); }
 #syncBadge.sync-err { color: var(--bad); }
 
+/* ---------- Шапка: бейдж подгруппы у заголовка, отступ пилюли недель ----------
+   На сайте .weekpill живёт внутри .headrow, здесь он отдельной строкой —
+   без margin прилипает к сегменту разделов. */
+.h1-tag {
+  display: inline-block; vertical-align: 2px;
+  margin-left: 6px; padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--badge-bg); color: var(--accent);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
+}
+.panel .weekpill { margin-top: 12px; }
+.panel .weekrow { margin-top: 10px; }
+
 /* ---------- Карточка пары (как карточки сайта: hairline в light, подъём в dark) ---------- */
 .paircard {
   background: var(--card);

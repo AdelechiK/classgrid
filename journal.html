@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" id="metaTheme">
 <title>Журнал 307</title>
-<meta name="description" content="Журнал посещаемости групп А и Б: отметки по парам, сводка пропусков и список студентов.">
+<meta name="description" content="Журнал посещаемости подгруппы Б: отметки по парам, сводка пропусков и список студентов.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -20,7 +20,7 @@ try{var __s=JSON.parse(localStorage.getItem("journal307:ui")||"{}");var __p=JSON
 <header class="hdr">
   <div class="topbar">
     <div class="brand">
-      <h1>Журнал 307</h1>
+      <h1>Журнал 307 <span class="h1-tag">Б</span></h1>
       <p class="sub" id="syncBadge" hidden></p>
     </div>
     <div class="hdr-actions">
@@ -33,16 +33,17 @@ try{var __s=JSON.parse(localStorage.getItem("journal307:ui")||"{}");var __p=JSON
 
   <div class="panel">
     <div class="headrow">
-      <div class="seg" id="viewSeg" role="group" aria-label="Раздел журнала" style="flex:1 1 auto; min-width:0;">
+      <div class="seg" id="viewSeg" role="group" aria-label="Раздел журнала">
         <button type="button" data-view="marks" aria-pressed="true">Отметки</button>
         <button type="button" data-view="stats" aria-pressed="false">Сводка</button>
         <button type="button" data-view="roster" aria-pressed="false">Список</button>
       </div>
-      <div class="seg groupseg" id="groupSeg" role="group" aria-label="Учебная группа">
-        <button type="button" data-group="А" aria-pressed="true" aria-label="Группа А">А</button>
-        <button type="button" data-group="Б" aria-pressed="false" aria-label="Группа Б">Б</button>
-      </div>
     </div>
+
+    <button class="weekpill" id="weekPill" type="button" aria-expanded="false" aria-controls="weekRow">
+      <span id="weekPillText"></span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
 
     <div class="weekrow" id="weekRow" hidden>
       <button class="wk-step" id="weekPrev" type="button" aria-label="Предыдущая неделя">
@@ -53,11 +54,6 @@ try{var __s=JSON.parse(localStorage.getItem("journal307:ui")||"{}");var __p=JSON
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 5l7 7-7 7"/></svg>
       </button>
     </div>
-
-    <button class="weekpill" id="weekPill" type="button" aria-expanded="false" aria-controls="weekRow">
-      <span id="weekPillText"></span>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
 
     <nav class="daytabs" id="dayTabs" role="tablist" aria-label="День недели"></nav>
   </div>

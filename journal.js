@@ -154,7 +154,7 @@
   var saved = readUi();
   var state = {
     view: (saved && (saved.view === "stats" || saved.view === "roster")) ? saved.view : "marks",
-    group: (saved && saved.group === "Б") ? "Б" : "А",
+    group: "Б",   // журнал ведётся только для подгруппы Б (решение юзера 06.11)
     week: clamp(saved && saved.week, 1, MAX_WEEK) || 1,
     day: clamp(saved && saved.day, 0, 5) || 0,
     editingId: null          // inline-правка ростера (не сохраняется)
@@ -246,10 +246,6 @@
     var vseg = el("viewSeg").querySelectorAll("button");
     for (i = 0; i < vseg.length; i++) {
       vseg[i].setAttribute("aria-pressed", String(vseg[i].dataset.view === state.view));
-    }
-    var gseg = el("groupSeg").querySelectorAll("button");
-    for (i = 0; i < gseg.length; i++) {
-      gseg[i].setAttribute("aria-pressed", String(gseg[i].dataset.group === state.group));
     }
 
     var wseg = el("weekSeg");
@@ -672,13 +668,6 @@
       /* смена раздела — новый контекст: страница возвращается наверх
          (заодно sticky-шапка не мешает fullPage-скриншотам секций) */
       window.scrollTo(0, 0);
-    });
-    el("groupSeg").addEventListener("click", function (e) {
-      var b = e.target.closest("button");
-      if (!b || !b.dataset.group || b.dataset.group === state.group) return;
-      state.group = b.dataset.group;
-      state.editingId = null;
-      save(); renderAll();
     });
     el("weekSeg").addEventListener("click", function (e) {
       var b = e.target.closest("button");
