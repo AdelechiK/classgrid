@@ -612,9 +612,12 @@
     return decodeURIComponent(escape(atob(String(s).replace(/\s+/g, ""))));
   }
 
-  /* Таймаут 10 c через AbortController (01-store-api). */
+  /* Таймаут 10 c через AbortController (01-store-api). cache: "no-store" обязателен:
+     GitHub отдаёт Contents API с Cache-Control: max-age=60, и Chromium после 409
+     возвращал GET из HTTP-кэша с протухшим sha — все ретраи слияния 409-ились
+     (живой кейс 06.11, второе устройство не могло допушить клетку). */
   function fetchTimeout(method, url, body) {
-    var opts = { method: method, headers: ghHeaders(!!body) };
+    var opts = { method: method, headers: ghHeaders(!!body), cache: "no-store" };
     if (body) opts.body = body;
     var timer = null;
     if (typeof AbortController !== "undefined") {
