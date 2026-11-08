@@ -157,6 +157,7 @@
     group: "Б",   // журнал ведётся только для подгруппы Б (решение юзера 06.11)
     week: clamp(saved && saved.week, 1, MAX_WEEK) || 1,
     day: clamp(saved && saved.day, 0, 5) || 0,
+    folded: (saved && saved.folded && typeof saved.folded === "object") ? saved.folded : {},
     editingId: null          // inline-правка ростера (не сохраняется)
   };
   var TODAY = todayInfo();
@@ -174,7 +175,8 @@
   function save() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
-        view: state.view, group: state.group, week: state.week, day: state.day
+        view: state.view, group: state.group, week: state.week, day: state.day,
+        folded: state.folded
       }));
     } catch (e) { /* приватный режим */ }
   }
@@ -298,11 +300,21 @@
   function marksHTML(date, lessons, students) {
     var g = state.group;
     return lessons.map(function (ls) {
+      var i, c, marked = 0, anyUnc = false;
+      for (i = 0; i < students.length; i++) {
+        c = JStore.getMark(g, date, ls.ti, students[i].id);
+        if (c && c.v === "p") marked++;
+        if (!c) anyUnc = true;
+      }
+      /* дефолт: свернуть, если есть отмеченные (в развёрнутом виде они не нужны) */
+      var fold = state.folded[ls.ti] === undefined ? marked > 0 : state.folded[ls.ti];
       var rows = students.map(function (s) {
-        var c = JStore.getMark(g, date, ls.ti, s.id);
+        c = JStore.getMark(g, date, ls.ti, s.id);
         var st = !c ? "st-unc" : (c.v === "p" ? "st-p" : "st-a");
         var reason = (c && c.v === "a" && c.r) ? reasonText(c.r) : "";
-        return '<div class="strow ' + st + '" data-sid="' + esc(s.id) + '" data-ti="' + ls.ti + '">' +
+        return '<div class="strow ' + st + (reason ? " with-reason" : "") +
+          (fold && st === "st-p" ? " st-fold" : "") +
+          '" data-sid="' + esc(s.id) + '" data-ti="' + ls.ti + '">' +
           '<div class="st-name">' + esc(displayName(s.name)) + "</div>" +
           (reason ? '<div class="st-reason">' + esc(reason) + "</div>" : "") +
           '<div class="st-actions">' +
@@ -312,19 +324,38 @@
             (st === "st-a") + '">Не был</button>' +
           "</div></div>";
       }).join("");
-      return '<div class="paircard"><div class="pc-head">' +
+      var head = '<div class="pc-head">' +
         '<div class="pc-time">' + esc(TIMES[ls.ti]) + "</div>" +
         '<div class="pc-name">' + esc(ls.item.name) +
         (ls.item.shared ? '<span class="badge">Смежная</span>' : "") + "</div>" +
-        '<button class="pc-all" type="button" data-ti="' + ls.ti + '">Все были</button></div>' +
-        '<div class="pc-rows">' + rows + "</div></div>";
+        (!anyUnc && students.length ? '<span class="pc-done">Пара отмечена</span>' : "") +
+        '<button class="pc-all" type="button" data-ti="' + ls.ti + '">Все были</button></div>';
+      var foldBtn = marked > 0
+        ? '<button class="pc-fold" type="button" data-ti="' + ls.ti + '" aria-expanded="' +
+          String(!fold) + '">Отмечено ' + marked + " из " + students.length + " – " +
+          (fold ? "показать" : "свернуть") +
+          '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'
+        : "";
+      return '<div class="paircard">' + head + foldBtn + '<div class="pc-rows">' + rows + "</div></div>";
     }).join("");
   }
   function renderMarks() {
     var date = isoDate(state.week, state.day);
     var lessons = lessonsOfDay(state.group, state.day, state.week);
     var students = JStore.activeStudents(state.group);
-    el("viewMarks").innerHTML = marksHTML(date, lessons, students);
+    var marks = 0, abs = 0, i, j, c;
+    if (lessons.length && students.length) {
+      for (i = 0; i < lessons.length; i++)
+        for (j = 0; j < students.length; j++) {
+          c = JStore.getMark(state.group, date, lessons[i].ti, students[j].id);
+          if (c) { marks++; if (c.v === "a") abs++; }
+        }
+    }
+    var line = (lessons.length && students.length)
+      ? '<p class="dayline">Отметок ' + marks + " из " + (lessons.length * students.length) +
+        (abs ? ", не были " + abs : "") + "</p>"
+      : "";
+    el("viewMarks").innerHTML = line + marksHTML(date, lessons, students);
     el("emptyMsg").hidden = lessons.length > 0;
   }
 
@@ -482,7 +513,8 @@
       text = "Синхронизация не настроена";
     }
     b.className = "sub" + (cls ? " " + cls : "");
-    b.textContent = text;
+    /* кольцо загрузки — только на «Отправка…» (в полёте есть изменения) */
+    b.innerHTML = (st.state === "pending" ? '<span class="spin"></span>' : "") + esc(text);
     b.hidden = false;
   }
 
@@ -719,6 +751,14 @@
           onAllWere(parseInt(btn.dataset.ti, 10));
           return;
         }
+        if (btn.classList.contains("pc-fold")) {
+          var ti = parseInt(btn.dataset.ti, 10);
+          /* кнопка существует только при отмеченных, чей дефолт — свернуто */
+          var cur = state.folded[ti] === undefined ? true : state.folded[ti];
+          state.folded[ti] = !cur;
+          save(); renderAll();
+          return;
+        }
         if (btn.classList.contains("pill")) {
           row = btn.closest(".strow");
           if (!row) return;
@@ -908,6 +948,34 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && openSheetEl) closeSheets();
     });
+
+    /* ---------- свайп влево-вправо: смена дня (порт из app.js) ---------- */
+    (function () {
+      var sx = 0, sy = 0, tracking = false;
+      var mn = el("main");
+      mn.addEventListener("touchstart", function (e) {
+        if (e.touches.length !== 1) { tracking = false; return; }
+        sx = e.touches[0].clientX;
+        sy = e.touches[0].clientY;
+        tracking = true;
+      }, { passive: true });
+      mn.addEventListener("touchend", function (e) {
+        if (!tracking) return;
+        tracking = false;
+        if (state.view !== "marks") return;
+        var t = e.changedTouches[0];
+        var dx = t.clientX - sx, dy = t.clientY - sy;
+        if (Math.abs(dx) < 60 || Math.abs(dy) >= Math.abs(dx)) return;
+        var dir = dx < 0 ? 1 : -1;   // влево — следующий день
+        var nd = state.day + dir, nw = state.week;
+        if (nd > 5) { nd = 0; if (nw >= MAX_WEEK) return; nw++; }
+        else if (nd < 0) { nd = 5; if (nw <= 1) return; nw--; }
+        if (!dayInSemester(nw, nd)) return;
+        state.day = nd;
+        state.week = nw;
+        save(); renderAll();
+      }, { passive: true });
+    })();
 
     /* «Сегодня» при пробуждении PWA — как в app.js */
     document.addEventListener("visibilitychange", function () {
