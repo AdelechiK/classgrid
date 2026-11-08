@@ -641,7 +641,9 @@
     var owner = el("cfgOwner").value.trim();
     var repo = el("cfgRepo").value.trim();
     var meta = JStore.state().meta;
-    var token = el("cfgToken").value.trim() || meta.token || "";
+    /* токен: срезать ВСЕ пробельные символы — вставка с переносами строк
+       внутри (типовая потеря при переносе на телефон) ломала заголовок */
+    var token = el("cfgToken").value.replace(/\s+/g, "") || meta.token || "";
     if (!owner || !repo || !token) { showSnack("Нужны owner, repo и token", null); return; }
     cfgTokenKeep = false;
     JStore.setSyncConfig({ owner: owner, repo: repo, token: token }).then(function () {
