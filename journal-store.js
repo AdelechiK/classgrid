@@ -163,11 +163,11 @@
       try { localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch (e) { /* переполнение/приватный режим */ }
     }
     function mirrorRead(key) {
-      var o = lsRead();
+      var o = normMirrorObj(lsRead());
       return (o && o[key] !== undefined) ? o[key] : null;
     }
     function mirrorWrite(key, value) {
-      var o = lsRead() || {};
+      var o = normMirrorObj(lsRead());
       o[key] = value;
       lsWrite(o);
     }
@@ -184,6 +184,15 @@
       mirrorGet: function (key) { return Promise.resolve(mirrorRead(key)); },
       mirrorPut: function (key, value) { mirrorWrite(key, value); return Promise.resolve(); }
     };
+  }
+
+  /* Примитив или массив в зеркале (порча руками, сбой записи) не должен
+     ронять lsWrite — такой контент отбрасывается, зеркало самолечится
+     следующей мутацией (данные страхует IDB). */
+  function normMirrorObj(o) {
+    if (!o || typeof o !== "object") return {};
+    if (Object.prototype.toString.call(o) === "[object Array]") return {};
+    return o;
   }
 
   function defaultAdapter() {
@@ -567,7 +576,10 @@
       var data;
       try { data = JSON.parse(String(str)); }
       catch (e) { throw mkErr("importJSON: некорректный JSON"); }
-      if (!data || typeof data !== "object") throw mkErr("importJSON: ожидается объект");
+      if (!data || typeof data !== "object" ||
+          Object.prototype.toString.call(data) === "[object Array]" || data.v !== 1) {
+        throw mkErr("importJSON: ожидается {v:1, cells, roster}");
+      }
       var incoming = { cells: normCells(data.cells), roster: normRoster(data.roster) };
       var counts = {
         cells: Object.keys(incoming.cells).length,
@@ -897,6 +909,7 @@
     _setOnline: setOnlineFlag,
     _merge: mergeStates,
     _stable: stableStringify,
+    _normMirrorObj: normMirrorObj,
     _resetForTests: function () {
       _cells = {};
       _roster = { "А": [], "Б": [] };

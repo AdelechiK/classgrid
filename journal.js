@@ -644,10 +644,15 @@
     var inp = el("addName");
     var v = inp ? inp.value.trim() : "";
     if (!v) { if (inp) inp.focus(); return; }
-    JStore.addStudent(state.group, v).then(function () {
-      var n = el("addName");
-      if (n) n.value = "";
-    }).catch(failSnack);
+    /* дедуп как у вставки списком: точное имя среди активных — не добавляем */
+    var list = JStore.activeStudents(state.group), i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].name === v) { showSnack(displayName(v) + " уже в списке", null); return; }
+    }
+    /* поле чистим сразу после дедуп-проверки: отложенная очистка в .then
+       теряла второй ввод, набранный до сохранения первого (баг-хант 07.11) */
+    if (inp) inp.value = "";
+    JStore.addStudent(state.group, v).catch(failSnack);
     refreshSoon();
   }
   function onPasteImport() {
