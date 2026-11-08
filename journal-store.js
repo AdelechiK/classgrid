@@ -11,9 +11,8 @@
 
   function deepCopy(v) { return JSON.parse(JSON.stringify(v)); }
 
-  /* Детерминированный JSON: рекурсивная сортировка ключей объектов (по убыванию —
-     эталон .qa/test_journal_store.js «_stable: обратимый»), порядок массивов
-     сохраняется — стабильные диффы state.json. */
+  /* Детерминированный JSON: рекурсивная сортировка ключей объектов по возрастанию,
+     порядок массивов сохраняется — стабильные диффы state.json. */
   function stableValue(v) {
     var i, out, keys, k;
     if (v === null || typeof v !== "object") return v;
@@ -22,7 +21,7 @@
       for (i = 0; i < v.length; i++) out[i] = stableValue(v[i]);
       return out;
     }
-    keys = Object.keys(v).sort().reverse();
+    keys = Object.keys(v).sort();
     out = {};
     for (i = 0; i < keys.length; i++) { k = keys[i]; out[k] = stableValue(v[k]); }
     return out;
