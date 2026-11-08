@@ -201,12 +201,17 @@
   }
   _adapter = defaultAdapter();
 
-  /* Сначала IDB, затем зеркало; сбой primary не роняет мутацию — зеркало страхует. */
+  /* Сначала IDB, затем зеркало; сбой primary не роняет мутацию — зеркало страхует.
+     Адаптер фиксируется на момент ЗАПРОСА записи: безаваит-хвост persistMap
+     (adoptSynced) исполняется микротасками позже и при чтении _adapter в момент
+     записи догонял уже подменённый адаптер (_setAdapter/_resetForTests) —
+     отложенная meta-запись предыдущего состояния утекала в новый (тест 14). */
   function persistMap(key, value) {
-    return Promise.resolve().then(function () { return _adapter.put(key, value); })
+    var ad = _adapter;
+    return Promise.resolve().then(function () { return ad.put(key, value); })
       .catch(function () { return null; })
       .then(function () {
-        return Promise.resolve().then(function () { return _adapter.mirrorPut(key, value); })
+        return Promise.resolve().then(function () { return ad.mirrorPut(key, value); })
           .catch(function () { return null; });
       });
   }
@@ -428,7 +433,9 @@
 
   function getMark(g, date, ti, sid) {
     var c = _cells[cellKey(g, date, ti, sid)];
-    return c === undefined ? null : c;
+    /* надгробие (v="d", снятая отметка) снаружи не видно — UI/статистика видят null */
+    if (!c || c.v === "d") return null;
+    return c;
   }
 
   function setMark(g, date, ti, sid, v, r) {
@@ -445,9 +452,14 @@
     });
   }
 
+  /* НАДГРОБИЕ вместо удаления: если ключ стереть, локальной клетки нет —
+     слияние вернёт живую отметку из облака (resurrection, живой баг 08.11).
+     Повторная setMark поверх надгробия возвращает отметку — новый t побеждает. */
   function clearMark(g, date, ti, sid) {
     return Promise.resolve().then(function () {
-      delete _cells[cellKey(g, date, ti, sid)];
+      _cells[cellKey(g, date, ti, sid)] = {
+        v: "d", r: null, t: Date.now(), dv: deviceId()
+      };
       return afterMutation("cells", _cells);
     });
   }
@@ -460,7 +472,11 @@
       for (i = 0; i < arr.length; i++) {
         k = cellKey(g, date, ti, arr[i]);
         old = hasOwn(_cells, k) ? _cells[k] : null;
-        prev[k] = old ? { v: old.v, r: old.r === undefined ? null : old.r, t: old.t, dv: old.dv } : null;
+        /* надгробие в снимке = null, как видит getMark: иначе вызывающий вернул бы
+           {v:"d"} через setMark, который принимает только p/a */
+        prev[k] = (old && old.v !== "d")
+          ? { v: old.v, r: old.r === undefined ? null : old.r, t: old.t, dv: old.dv }
+          : null;
       }
       for (i = 0; i < arr.length; i++) {
         k = cellKey(g, date, ti, arr[i]);

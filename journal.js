@@ -535,6 +535,7 @@
   /* ---------- шторки ---------- */
   var openSheetEl = null, closeTimer = null;
   function openSheet(sh) {
+    hideSnack();   // снекбар (z-index 70) лежит поверх шторки (60) — не оставляем его под ней
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
     var bd = el("sheetBd");
     el("reasonSheet").classList.remove("out");
@@ -775,8 +776,9 @@
         return;
       }
       row = e.target.closest(".strow");
-      /* клик по строке отсутствующего — сменить причину (02) */
-      if (row && row.classList.contains("st-a")) {
+      /* клик по строке отсутствующего — сменить причину, присутствующего — та же
+         шторка (там есть «Убрать отметку», без тапа «Не был») (02) */
+      if (row && (row.classList.contains("st-a") || row.classList.contains("st-p"))) {
         openReasonSheet(parseInt(row.dataset.ti, 10), row.dataset.sid);
       }
     });
