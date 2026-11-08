@@ -587,8 +587,11 @@
   /* ---------- синхронизация: клиент GitHub Contents API ---------- */
 
   function apiUrl() {
+    /* cache-buster: Safari исполняет no-store в запросах только с 27.0
+       (WebKit игнорировал Cache-Control request directives) — уникальный
+       параметр URL гарантированно бьёт HTTP-кэш в любом движке. */
     return "https://api.github.com/repos/" + encodeURIComponent(_meta.owner) + "/" +
-      encodeURIComponent(_meta.repo) + "/contents/state.json";
+      encodeURIComponent(_meta.repo) + "/contents/state.json?_=" + Date.now();
   }
 
   function ghHeaders(withBody) {

@@ -772,7 +772,7 @@
       if (row && b.dataset.act === "del") {
         pendingDel = row.dataset.sid;
         el("delSub").textContent = displayName(studentName(state.group, pendingDel)) +
-          ". Оставить в истории — отметки сохранятся; стереть полностью — отметки удалятся.";
+          ". Оставить в истории – отметки сохранятся; стереть полностью – отметки удалятся.";
         openSheet(el("delSheet"));
         return;
       }
